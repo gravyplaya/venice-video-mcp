@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "venice-video": {
+      "command": "node",
+      "args": ["/ABS/PATH/TO/venice-video-mcp/bin/venice-video-mcp.js"],
+      "env": {
+        "VENICE_API_KEY": "vn_xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "HARNESS_PATH": "/ABS/PATH/TO/venice-video-harness",
+        "HARNESS_WORKSPACE": "/ABS/PATH/TO/venice-video-harness"
+      }
+    }
+  }
+}
