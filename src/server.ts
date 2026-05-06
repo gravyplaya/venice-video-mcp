@@ -9,12 +9,6 @@ import {
   MediaInput,
   AssembleInput,
   InspectInput,
-  SeriesShape,
-  CharacterShape,
-  EpisodeShape,
-  MediaShape,
-  AssembleShape,
-  InspectShape,
 } from './schemas.js';
 import { handleSeries } from './tools/series.js';
 import { handleCharacter } from './tools/character.js';
@@ -49,7 +43,7 @@ server.registerTool(
   'series',
   {
     description: `Manage Venice series state (create / list / set or explore aesthetic). ${SKILL_HINT}`,
-    inputSchema: SeriesShape,
+    inputSchema: SeriesInput,
   },
   async (args: any) => {
     const parsed = SeriesInput.safeParse(args);
@@ -62,7 +56,7 @@ server.registerTool(
   'character',
   {
     description: `Manage characters in a series (add / audition voices / lock voice). ${SKILL_HINT}`,
-    inputSchema: CharacterShape,
+    inputSchema: CharacterInput,
   },
   async (args: any) => {
     const parsed = CharacterInput.safeParse(args);
@@ -75,7 +69,7 @@ server.registerTool(
   'episode',
   {
     description: `Episode workflow: new / workshop script / approve / storyboard / qa / qa_approve / fix_panel. ${SKILL_HINT}`,
-    inputSchema: EpisodeShape,
+    inputSchema: EpisodeInput,
   },
   async (args: any) => {
     const parsed = EpisodeInput.safeParse(args);
@@ -88,7 +82,7 @@ server.registerTool(
   'media',
   {
     description: `Generate or override media (videos / dialogue / sfx / music) and validate outputs. Long-running; supports progress. ${SKILL_HINT}`,
-    inputSchema: MediaShape,
+    inputSchema: MediaInput,
   },
   async (args: any, extra: any) => {
     const parsed = MediaInput.safeParse(args);
@@ -101,7 +95,7 @@ server.registerTool(
   'assemble',
   {
     description: `Final assembly and editing: assemble / produce / edit_transcribe / edit_render / edit_timeline. Long-running; supports progress. ${SKILL_HINT}`,
-    inputSchema: AssembleShape,
+    inputSchema: AssembleInput,
   },
   async (args: any, extra: any) => {
     const parsed = AssembleInput.safeParse(args);
@@ -114,7 +108,7 @@ server.registerTool(
   'inspect',
   {
     description: `Read-only state inspection (list / series / episode / shot / models / voices). Cheap, no spawn. ${SKILL_HINT}`,
-    inputSchema: InspectShape,
+    inputSchema: InspectInput,
   },
   async (args: any) => {
     const parsed = InspectInput.safeParse(args);

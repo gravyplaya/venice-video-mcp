@@ -1,8 +1,25 @@
 import { z } from 'zod';
 
 const Project = z.string().min(1).describe('Series slug or absolute path to a series output directory');
-const Episode = z.coerce.number().int().positive().describe('Episode number (1-based)');
-const Shot = z.coerce.number().int().positive().describe('Shot number (1-based)');
+const toNumber = (value: unknown): unknown => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim() !== '') return Number(value);
+  return value;
+};
+const coercePositiveInt = (opts: { min?: number; max?: number } = {}) => {
+  let schema = z.number().int().positive().finite();
+  if (opts.min !== undefined) schema = schema.min(opts.min);
+  if (opts.max !== undefined) schema = schema.max(opts.max);
+  return z.preprocess(toNumber, schema);
+};
+const coerceFiniteNumber = (opts: { min?: number; max?: number } = {}) => {
+  let schema = z.number().finite();
+  if (opts.min !== undefined) schema = schema.min(opts.min);
+  if (opts.max !== undefined) schema = schema.max(opts.max);
+  return z.preprocess(toNumber, schema);
+};
+const Episode = coercePositiveInt().describe('Episode number (1-based)');
+const Shot = coercePositiveInt().describe('Shot number (1-based)');
 
 export const SeriesNew = z.object({
   action: z.literal('new'),
@@ -10,11 +27,11 @@ export const SeriesNew = z.object({
   concept: z.string().min(1),
   genre: z.string().default('drama'),
   setting: z.string().default(''),
-});
+}).strict();
 
 export const SeriesList = z.object({
   action: z.literal('list'),
-});
+}).strict();
 
 export const SeriesSetAesthetic = z.object({
   action: z.literal('set_aesthetic'),
@@ -24,13 +41,13 @@ export const SeriesSetAesthetic = z.object({
   lighting: z.string().min(1),
   lens: z.string().default('cinematic depth of field'),
   film: z.string().default('digital illustration'),
-});
+}).strict();
 
 export const SeriesExploreAesthetic = z.object({
   action: z.literal('explore_aesthetic'),
   project: Project,
-  count: z.coerce.number().int().min(1).max(7).default(5),
-});
+  count: coercePositiveInt({ min: 1, max: 7 }).default(5),
+}).strict();
 
 export const SeriesInput = z.discriminatedUnion('action', [
   SeriesNew,
@@ -50,15 +67,15 @@ export const CharacterAdd = z.object({
   voiceDesc: z.string().optional(),
   baseTraits: z.string().optional(),
   skipImages: z.boolean().default(false),
-});
+}).strict();
 
 export const CharacterAuditionVoices = z.object({
   action: z.literal('audition_voices'),
   project: Project,
   character: z.string().min(1),
   sampleText: z.string().optional(),
-  count: z.coerce.number().int().min(1).max(10).default(5),
-});
+  count: coercePositiveInt({ min: 1, max: 10 }).default(5),
+}).strict();
 
 export const CharacterLock = z.object({
   action: z.literal('lock'),
@@ -66,7 +83,7 @@ export const CharacterLock = z.object({
   character: z.string().min(1),
   voiceId: z.string().min(1),
   voiceName: z.string().optional(),
-});
+}).strict();
 
 export const CharacterInput = z.discriminatedUnion('action', [
   CharacterAdd,
@@ -78,7 +95,7 @@ export const EpisodeNew = z.object({
   action: z.literal('new'),
   project: Project,
   title: z.string().min(1),
-});
+}).strict();
 
 export const EpisodeWorkshop = z.object({
   action: z.literal('workshop'),
@@ -86,14 +103,14 @@ export const EpisodeWorkshop = z.object({
   episode: Episode,
   concept: z.string().min(1),
   model: z.string().default('llama-3.3-70b'),
-});
+}).strict();
 
 export const EpisodeApprove = z.object({
   action: z.literal('approve'),
   project: Project,
   episode: Episode,
   notes: z.string().optional(),
-});
+}).strict();
 
 export const EpisodeStoryboard = z.object({
   action: z.literal('storyboard'),
@@ -101,11 +118,11 @@ export const EpisodeStoryboard = z.object({
   episode: Episode,
   refine: z.boolean().default(true),
   editModel: z.string().default('seedream-v5-lite-edit'),
-  cfgScale: z.coerce.number().optional(),
+  cfgScale: coerceFiniteNumber({ min: 1, max: 10 }).optional(),
   debug: z.boolean().default(false),
   skipApproval: z.boolean().default(false),
   force: z.boolean().default(false),
-});
+}).strict();
 
 export const EpisodeQa = z.object({
   action: z.literal('qa'),
@@ -113,14 +130,14 @@ export const EpisodeQa = z.object({
   episode: Episode,
   model: z.string().default('qwen-2.5-vl'),
   shots: z.string().optional(),
-});
+}).strict();
 
 export const EpisodeQaApprove = z.object({
   action: z.literal('qa_approve'),
   project: Project,
   episode: Episode,
   notes: z.string().optional(),
-});
+}).strict();
 
 export const EpisodeFixPanel = z.object({
   action: z.literal('fix_panel'),
@@ -130,7 +147,7 @@ export const EpisodeFixPanel = z.object({
   characters: z.string().optional().describe('Comma-separated character names'),
   editModel: z.string().default('seedream-v5-lite-edit'),
   prompt: z.string().optional(),
-});
+}).strict();
 
 export const EpisodeInput = z.discriminatedUnion('action', [
   EpisodeNew,
@@ -147,7 +164,7 @@ export const MediaGenerateVideos = z.object({
   project: Project,
   episode: Episode,
   skipQa: z.boolean().default(false),
-});
+}).strict();
 
 export const MediaOverrideAudio = z.object({
   action: z.literal('override_audio'),
@@ -155,7 +172,7 @@ export const MediaOverrideAudio = z.object({
   episode: Episode,
   dialogue: z.boolean().default(false),
   sfx: z.boolean().default(false),
-});
+}).strict();
 
 export const MediaGenerateMusic = z.object({
   action: z.literal('generate_music'),
@@ -163,14 +180,14 @@ export const MediaGenerateMusic = z.object({
   episode: Episode,
   prompt: z.string().optional(),
   duration: z.string().default('60'),
-});
+}).strict();
 
 export const MediaValidate = z.object({
   action: z.literal('validate'),
   project: Project,
   episode: Episode,
   videoOutputs: z.boolean().default(false).describe('Run validate-video-outputs instead of validate-episode'),
-});
+}).strict();
 
 export const MediaInput = z.discriminatedUnion('action', [
   MediaGenerateVideos,
@@ -186,10 +203,10 @@ export const AssembleAssemble = z.object({
   subtitles: z.boolean().default(true),
   music: z.boolean().default(true),
   ambient: z.boolean().default(true),
-  ambientVolume: z.coerce.number().min(0).max(1).default(0.3),
+  ambientVolume: coerceFiniteNumber({ min: 0, max: 1 }).default(0.3),
   dialogueReplace: z.boolean().default(true),
-  nativeVolume: z.coerce.number().min(0).max(1).default(0.2),
-});
+  nativeVolume: coerceFiniteNumber({ min: 0, max: 1 }).default(0.2),
+}).strict();
 
 export const AssembleProduce = z.object({
   action: z.literal('produce'),
@@ -197,7 +214,7 @@ export const AssembleProduce = z.object({
   episode: Episode,
   withTts: z.boolean().default(false),
   skipMusic: z.boolean().default(false),
-});
+}).strict();
 
 export const AssembleEditTranscribe = z.object({
   action: z.literal('edit_transcribe'),
@@ -210,7 +227,7 @@ export const AssembleEditTranscribe = z.object({
   speakerMap: z.string().optional(),
   wordsOutDir: z.string().optional(),
   label: z.string().optional(),
-});
+}).strict();
 
 export const AssembleEditRender = z.object({
   action: z.literal('edit_render'),
@@ -218,20 +235,20 @@ export const AssembleEditRender = z.object({
   font: z.string().optional(),
   skipArchive: z.boolean().default(false),
   dryRun: z.boolean().default(false),
-});
+}).strict();
 
 export const AssembleEditTimeline = z.object({
   action: z.literal('edit_timeline'),
   video: z.string().min(1),
   out: z.string().min(1),
-  start: z.coerce.number(),
-  end: z.coerce.number(),
-  width: z.coerce.number().int().positive().default(1600),
-  frames: z.coerce.number().int().positive().default(8),
-  silenceDb: z.coerce.number().default(-30),
-  silenceMin: z.coerce.number().default(0.18),
+  start: coerceFiniteNumber({ min: 0 }),
+  end: coerceFiniteNumber({ min: 0 }),
+  width: coercePositiveInt({ max: 8192 }).default(1600),
+  frames: coercePositiveInt({ max: 64 }).default(8),
+  silenceDb: coerceFiniteNumber({ min: -100, max: 0 }).default(-30),
+  silenceMin: coerceFiniteNumber({ min: 0, max: 10 }).default(0.18),
   wordsJson: z.string().optional(),
-});
+}).strict();
 
 export const AssembleInput = z.discriminatedUnion('action', [
   AssembleAssemble,
@@ -245,29 +262,29 @@ export const InspectInput = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('series'),
     project: Project,
-  }),
+  }).strict(),
   z.object({
     action: z.literal('episode'),
     project: Project,
     episode: Episode,
-  }),
+  }).strict(),
   z.object({
     action: z.literal('shot'),
     project: Project,
     episode: Episode,
     shot: Shot,
-  }),
+  }).strict(),
   z.object({
     action: z.literal('models'),
     category: z.enum(['video', 'image', 'edit', 'tts', 'music', 'sfx', 'all']).default('all'),
-  }),
+  }).strict(),
   z.object({
     action: z.literal('voices'),
     provider: z.enum(['kokoro', 'qwen3', 'all']).default('all'),
-  }),
+  }).strict(),
   z.object({
     action: z.literal('list'),
-  }),
+  }).strict(),
 ]);
 
 export type SeriesInputT = z.infer<typeof SeriesInput>;

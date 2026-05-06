@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
-import { resolve, isAbsolute, join } from 'node:path';
+import { resolve, isAbsolute, join, normalize, relative } from 'node:path';
 import 'dotenv/config';
 
 export interface HarnessConfig {
@@ -90,16 +90,22 @@ export function getHarnessRoot(): string | null {
 }
 
 export function resolveProjectPath(project: string): string {
-  if (isAbsolute(project)) return project;
-
   const ws = getWorkspace();
-  const direct = resolve(ws, project);
-  if (existsSync(direct) && statSync(direct).isDirectory()) return direct;
+  if (isAbsolute(project)) {
+    return ensureWithinWorkspace(normalize(project), ws, 'project');
+  }
 
-  const underOutput = resolve(ws, 'output', project);
+  const direct = ensureWithinWorkspace(resolve(ws, project), ws, 'project');
+  const underOutput = ensureWithinWorkspace(resolve(ws, 'output', project), ws, 'project');
   if (existsSync(underOutput) && statSync(underOutput).isDirectory()) return underOutput;
-
+  if (existsSync(direct) && statSync(direct).isDirectory()) return direct;
   return direct;
+}
+
+export function resolveWorkspacePath(inputPath: string): string {
+  const ws = getWorkspace();
+  const resolved = isAbsolute(inputPath) ? normalize(inputPath) : resolve(ws, inputPath);
+  return ensureWithinWorkspace(resolved, ws, 'path');
 }
 
 function resolveOnPath(cmd: string): string | null {
@@ -109,4 +115,13 @@ function resolveOnPath(cmd: string): string | null {
   } catch {
   }
   return null;
+}
+
+function ensureWithinWorkspace(candidate: string, workspace: string, label: string): string {
+  const rel = relative(workspace, candidate);
+  const isWithin = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  if (!isWithin) {
+    throw new Error(`${label} must resolve inside HARNESS_WORKSPACE: ${workspace}`);
+  }
+  return candidate;
 }

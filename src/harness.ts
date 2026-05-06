@@ -42,11 +42,18 @@ export async function runHarness(
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    const stdoutChunks: string[] = [];
-    const stderrChunks: string[] = [];
+    const MAX_CAPTURE_CHARS = 200_000;
+    let stdoutText = '';
+    let stderrText = '';
     let stdoutBuf = '';
     let stderrBuf = '';
     let timedOut = false;
+    const appendBounded = (existing: string, chunk: string): string => {
+      if (chunk.length >= MAX_CAPTURE_CHARS) return chunk.slice(-MAX_CAPTURE_CHARS);
+      const combined = existing + chunk;
+      if (combined.length <= MAX_CAPTURE_CHARS) return combined;
+      return combined.slice(combined.length - MAX_CAPTURE_CHARS);
+    };
 
     const onLine = (line: string, stream: 'stdout' | 'stderr') => {
       if (opts.onProgress) {
@@ -59,7 +66,7 @@ export async function runHarness(
 
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
-      stdoutChunks.push(chunk);
+      stdoutText = appendBounded(stdoutText, chunk);
       stdoutBuf += chunk;
       const lines = stdoutBuf.split('\n');
       stdoutBuf = lines.pop() ?? '';
@@ -68,7 +75,7 @@ export async function runHarness(
 
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => {
-      stderrChunks.push(chunk);
+      stderrText = appendBounded(stderrText, chunk);
       stderrBuf += chunk;
       const lines = stderrBuf.split('\n');
       stderrBuf = lines.pop() ?? '';
@@ -103,8 +110,8 @@ export async function runHarness(
         ok: code === 0 && !timedOut,
         code,
         signal: sig,
-        stdout: stdoutChunks.join(''),
-        stderr: stderrChunks.join(''),
+        stdout: stdoutText,
+        stderr: stderrText,
         command: `${cfg.bin} ${fullArgs.join(' ')}`,
         durationMs: Date.now() - start,
       };

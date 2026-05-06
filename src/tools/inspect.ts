@@ -6,130 +6,142 @@ import { ok, err, type ToolContent } from '../responses.js';
 import type { InspectInputT } from '../schemas.js';
 
 export async function handleInspect(input: InspectInputT): Promise<ToolContent> {
-  switch (input.action) {
-    case 'list': {
-      const ws = getWorkspace();
-      const candidates = [join(ws, 'output'), ws];
-      for (const root of candidates) {
-        if (!existsSync(root)) continue;
-        const entries = await listSeriesIn(root);
-        if (entries.length) {
-          return ok(`found ${entries.length} series under ${root}`, {
-            data: { workspace: ws, root, series: entries },
-          });
-        }
-      }
-      return ok('no series found', { data: { workspace: ws, series: [] } });
-    }
-    case 'series': {
-      const dir = resolveProjectPath(input.project);
-      const seriesPath = join(dir, 'series.json');
-      if (!existsSync(seriesPath)) {
-        return err(`series.json not found at ${seriesPath}`);
-      }
-      const data = JSON.parse(await readFile(seriesPath, 'utf8'));
-      const summary = summarizeSeries(data);
-      return ok(`loaded series ${summary.slug ?? '(unknown)'}`, {
-        paths: { seriesJson: seriesPath, projectDir: dir },
-        data: summary,
-      });
-    }
-    case 'episode': {
-      const dir = resolveProjectPath(input.project);
-      const epDir = join(dir, 'episodes', `episode-${pad(input.episode)}`);
-      if (!existsSync(epDir)) return err(`episode dir not found: ${epDir}`);
-      const result: {
-        dir: string;
-        scriptVersions: string[];
-        approved: boolean;
-        qaApproved: boolean;
-        finalVideo: string | null;
-        shotCount: number | null;
-      } = {
-        dir: epDir,
-        scriptVersions: [],
-        approved: false,
-        qaApproved: false,
-        finalVideo: null,
-        shotCount: null,
-      };
-      const files = await readdir(epDir);
-      for (const f of files) {
-        if (/^script(?:-v\d+)?\.json$/.test(f)) result.scriptVersions.push(f);
-        if (f === 'script-approved.json') result.approved = true;
-        if (f === 'qa-approved.json') result.qaApproved = true;
-        if (/^episode-\d+-final\.mp4$/.test(f)) result.finalVideo = join(epDir, f);
-      }
-      const scriptPath = join(epDir, 'script.json');
-      if (existsSync(scriptPath)) {
-        try {
-          const script = JSON.parse(await readFile(scriptPath, 'utf8'));
-          if (Array.isArray(script.shots)) result.shotCount = script.shots.length;
-        } catch {
-        }
-      }
-      return ok(`inspected episode ${input.episode}`, { paths: { episodeDir: epDir }, data: result });
-    }
-    case 'shot': {
-      const dir = resolveProjectPath(input.project);
-      const epDir = join(dir, 'episodes', `episode-${pad(input.episode)}`);
-      const sceneDir = join(epDir, 'scene-001');
-      if (!existsSync(sceneDir)) return err(`scene-001 dir not found at ${sceneDir}`);
-      const shotStem = `shot-${pad(input.shot)}`;
-      const all = await readdir(sceneDir);
-      const matches = all.filter((f) => f.startsWith(shotStem));
-      if (matches.length === 0) return err(`no files matching ${shotStem}* in ${sceneDir}`);
-      return ok(`found ${matches.length} files for ${shotStem}`, {
-        paths: { sceneDir },
-        data: { files: matches.sort() },
-      });
-    }
-    case 'models': {
-      const harnessDir = getHarnessRoot();
-      const summary: Record<string, string[]> = {};
-      if (harnessDir) {
-        const modelsPath = join(harnessDir, 'src', 'venice', 'models.ts');
-        if (existsSync(modelsPath)) {
-          const text = await readFile(modelsPath, 'utf8');
-          const ids = extractModelIds(text);
-          if (input.category === 'all') {
-            summary.all = ids;
-          } else {
-            summary[input.category] = ids.filter((id) => matchCategory(id, input.category));
+  try {
+    switch (input.action) {
+      case 'list': {
+        const ws = getWorkspace();
+        const candidates = [join(ws, 'output'), ws];
+        for (const root of candidates) {
+          if (!existsSync(root)) continue;
+          const entries = await listSeriesIn(root);
+          if (entries.length) {
+            return ok(`found ${entries.length} series under ${root}`, {
+              data: { workspace: ws, root, series: entries },
+            });
           }
         }
+        return ok('no series found', { data: { workspace: ws, series: [] } });
       }
-      return ok('model registry', {
-        data: {
-          source: harnessDir ? 'harness src/venice/models.ts' : 'unavailable (set HARNESS_PATH)',
-          ...summary,
-        },
-      });
-    }
-    case 'voices': {
-      const harnessDir = getHarnessRoot();
-      if (!harnessDir) {
-        return ok('voice catalog', { data: { source: 'unavailable (set HARNESS_PATH)' } });
+      case 'series': {
+        const dir = resolveProjectPath(input.project);
+        const seriesPath = join(dir, 'series.json');
+        if (!existsSync(seriesPath)) {
+          return err(`series.json not found at ${seriesPath}`);
+        }
+        let data: unknown;
+        try {
+          data = JSON.parse(await readFile(seriesPath, 'utf8'));
+        } catch (cause) {
+          return err(`failed to parse series.json at ${seriesPath}`, {
+            stderrTail: cause instanceof Error ? cause.message : String(cause),
+          });
+        }
+        const summary = summarizeSeries(data);
+        return ok(`loaded series ${summary.slug ?? '(unknown)'}`, {
+          paths: { seriesJson: seriesPath, projectDir: dir },
+          data: summary,
+        });
       }
-      const voicesPath = join(harnessDir, 'src', 'venice', 'voices.ts');
-      if (!existsSync(voicesPath)) {
-        return ok('voice catalog', { data: { source: voicesPath, note: 'file not found' } });
+      case 'episode': {
+        const dir = resolveProjectPath(input.project);
+        const epDir = join(dir, 'episodes', `episode-${pad(input.episode)}`);
+        if (!existsSync(epDir)) return err(`episode dir not found: ${epDir}`);
+        const result: {
+          dir: string;
+          scriptVersions: string[];
+          approved: boolean;
+          qaApproved: boolean;
+          finalVideo: string | null;
+          shotCount: number | null;
+        } = {
+          dir: epDir,
+          scriptVersions: [],
+          approved: false,
+          qaApproved: false,
+          finalVideo: null,
+          shotCount: null,
+        };
+        const files = await readdir(epDir);
+        for (const f of files) {
+          if (/^script(?:-v\d+)?\.json$/.test(f)) result.scriptVersions.push(f);
+          if (f === 'script-approved.json') result.approved = true;
+          if (f === 'qa-approved.json') result.qaApproved = true;
+          if (/^episode-\d+-final\.mp4$/.test(f)) result.finalVideo = join(epDir, f);
+        }
+        const scriptPath = join(epDir, 'script.json');
+        if (existsSync(scriptPath)) {
+          try {
+            const script = JSON.parse(await readFile(scriptPath, 'utf8'));
+            if (Array.isArray(script.shots)) result.shotCount = script.shots.length;
+          } catch {
+          }
+        }
+        return ok(`inspected episode ${input.episode}`, { paths: { episodeDir: epDir }, data: result });
       }
-      const text = await readFile(voicesPath, 'utf8');
-      const voiceIds = extractVoiceIds(text);
-      return ok('voice catalog', {
-        data: {
-          source: voicesPath,
-          provider: input.provider,
-          count: voiceIds.length,
-          ids: voiceIds,
-        },
-      });
+      case 'shot': {
+        const dir = resolveProjectPath(input.project);
+        const epDir = join(dir, 'episodes', `episode-${pad(input.episode)}`);
+        const sceneDir = join(epDir, 'scene-001');
+        if (!existsSync(sceneDir)) return err(`scene-001 dir not found at ${sceneDir}`);
+        const shotStem = `shot-${pad(input.shot)}`;
+        const all = await readdir(sceneDir);
+        const matches = all.filter((f) => f.startsWith(shotStem));
+        if (matches.length === 0) return err(`no files matching ${shotStem}* in ${sceneDir}`);
+        return ok(`found ${matches.length} files for ${shotStem}`, {
+          paths: { sceneDir },
+          data: { files: matches.sort() },
+        });
+      }
+      case 'models': {
+        const harnessDir = getHarnessRoot();
+        const summary: Record<string, string[]> = {};
+        if (harnessDir) {
+          const modelsPath = join(harnessDir, 'src', 'venice', 'models.ts');
+          if (existsSync(modelsPath)) {
+            const text = await readFile(modelsPath, 'utf8');
+            const ids = extractModelIds(text);
+            if (input.category === 'all') {
+              summary.all = ids;
+            } else {
+              summary[input.category] = ids.filter((id) => matchCategory(id, input.category));
+            }
+          }
+        }
+        return ok('model registry', {
+          data: {
+            source: harnessDir ? 'harness src/venice/models.ts' : 'unavailable (set HARNESS_PATH)',
+            ...summary,
+          },
+        });
+      }
+      case 'voices': {
+        const harnessDir = getHarnessRoot();
+        if (!harnessDir) {
+          return ok('voice catalog', { data: { source: 'unavailable (set HARNESS_PATH)' } });
+        }
+        const voicesPath = join(harnessDir, 'src', 'venice', 'voices.ts');
+        if (!existsSync(voicesPath)) {
+          return ok('voice catalog', { data: { source: voicesPath, note: 'file not found' } });
+        }
+        const text = await readFile(voicesPath, 'utf8');
+        const voiceIds = extractVoiceIds(text);
+        return ok('voice catalog', {
+          data: {
+            source: voicesPath,
+            provider: input.provider,
+            count: voiceIds.length,
+            ids: voiceIds,
+          },
+        });
+      }
+      default: {
+        const exhaustive: never = input;
+        return err(`unknown inspect action: ${(exhaustive as { action?: string }).action ?? 'unknown'}`);
+      }
     }
-    default: {
-      const exhaustive: never = input;
-      return err(`unknown inspect action: ${(exhaustive as { action?: string }).action ?? 'unknown'}`);
-    }
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return err(`inspect command rejected: ${message}`);
   }
 }
 
