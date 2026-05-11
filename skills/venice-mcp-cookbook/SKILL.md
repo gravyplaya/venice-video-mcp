@@ -185,6 +185,43 @@ Multi-edit a single panel to correct drift. Pass `characters` if only specific c
 }
 ```
 
+### `episode.insert_shot`
+Add a new shot to an approved script after a specific shot id. The harness assigns a suffix-letter id (`5b`, `5c`, ...) so existing shot numbers stay stable for already-rendered panels and clips. After inserting, re-run `episode.storyboard` and `media.generate_videos` to materialize the new shot only — existing shots are not regenerated.
+
+```json
+{
+  "action": "insert_shot",
+  "project": "the-audacity",
+  "episode": 1,
+  "after": "5",
+  "description": "Wide reaction shot: studio audience erupts in laughter; Vivienne smirks while Chad's confidence visibly cracks.",
+  "shotType": "action",
+  "duration": "4s",
+  "motion": "high",
+  "characters": "VIVIENNE,CHAD",
+  "transition": "CUT"
+}
+```
+
+With dialogue (speaker is required when dialogue is set):
+
+```json
+{
+  "action": "insert_shot",
+  "project": "the-audacity",
+  "episode": 1,
+  "after": "5b",
+  "description": "Vivienne leans into the camera, deadpan close-up.",
+  "shotType": "close-up",
+  "duration": "3s",
+  "motion": "low",
+  "characters": "VIVIENNE",
+  "dialogue": "Bless your heart, Chad.",
+  "speaker": "VIVIENNE",
+  "transition": "FADE"
+}
+```
+
 ---
 
 ## media
@@ -303,6 +340,37 @@ Single PNG (filmstrip + waveform + optional word labels) for one segment of a vi
   "silenceMin": 0.18,
   "wordsJson": "output/raw-takes/edit/final.words.json"
 }
+```
+
+### `assemble.export_timeline`
+Export a finished episode as an XML timeline you can import into Final Cut Pro X, Premiere Pro, or DaVinci Resolve and continue cutting. Requires `media.generate_videos` to have completed — there's nothing to lay onto a timeline otherwise. The output filename uses a format-specific extension so multiple exports can coexist:
+
+| `format`   | Output                                          | Editor              |
+|------------|-------------------------------------------------|---------------------|
+| `fcpxml`   | `episode-NNN.fcpxml`                            | Final Cut Pro X     |
+| `premiere` | `episode-NNN.premiere.xml` (xmeml v5)           | Adobe Premiere Pro  |
+| `davinci`  | `episode-NNN.resolve.fcpxml` (DaVinci-tuned)    | DaVinci Resolve     |
+
+```json
+{
+  "action": "export_timeline",
+  "project": "the-audacity",
+  "episode": 1,
+  "format": "fcpxml",
+  "fps": 24,
+  "width": 1920,
+  "height": 1080
+}
+```
+
+For Premiere:
+```json
+{ "action": "export_timeline", "project": "the-audacity", "episode": 1, "format": "premiere" }
+```
+
+For DaVinci Resolve:
+```json
+{ "action": "export_timeline", "project": "the-audacity", "episode": 1, "format": "davinci" }
 ```
 
 ---

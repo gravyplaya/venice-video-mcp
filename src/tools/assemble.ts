@@ -80,6 +80,25 @@ export async function handleAssemble(input: AssembleInputT, ctx: ProgressCtx = {
           paths: { manifest: resolveCwd(input.manifest) },
         });
       }
+      case 'export_timeline': {
+        const project = resolveProjectPath(input.project);
+        const args = [
+          'export-timeline',
+          '-p', project,
+          '-e', String(input.episode),
+          '--format', input.format,
+          '--fps', String(input.fps),
+          '--width', String(input.width),
+          '--height', String(input.height),
+        ];
+        const r = await runHarness(args);
+        const ext = exportTimelineExt(input.format);
+        return fromHarness(r, `exported ${input.format} timeline for episode ${input.episode}`, {
+          paths: {
+            timeline: `${project}/episodes/episode-${pad(input.episode)}/episode-${pad(input.episode)}${ext}`,
+          },
+        });
+      }
       case 'edit_timeline': {
         if (input.end <= input.start) {
           return err('assemble command rejected: end must be greater than start');
@@ -218,4 +237,12 @@ function resolveCwd(p: string): string {
 
 function pad(n: number): string {
   return n.toString().padStart(3, '0');
+}
+
+function exportTimelineExt(format: 'fcpxml' | 'premiere' | 'davinci'): string {
+  switch (format) {
+    case 'fcpxml': return '.fcpxml';
+    case 'premiere': return '.premiere.xml';
+    case 'davinci': return '.resolve.fcpxml';
+  }
 }

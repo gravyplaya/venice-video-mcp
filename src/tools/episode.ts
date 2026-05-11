@@ -81,6 +81,29 @@ export async function handleEpisode(input: EpisodeInputT): Promise<ToolContent> 
         const r = await runHarness(args);
         return fromHarness(r, `fixed panel for shot ${input.shot}`);
       }
+      case 'insert_shot': {
+        if (input.dialogue && !input.speaker) {
+          return err('episode command rejected: speaker is required when dialogue is set');
+        }
+        const args = [
+          'insert-shot',
+          '-p', project,
+          ...episodeArgs(input.episode),
+          '--after', input.after,
+          '--description', input.description,
+          '--type', input.shotType,
+          '--duration', input.duration,
+          '--motion', input.motion,
+          '--transition', input.transition,
+        ];
+        if (input.characters) args.push('--characters', input.characters);
+        if (input.dialogue) args.push('--dialogue', input.dialogue);
+        if (input.speaker) args.push('--speaker', input.speaker);
+        const r = await runHarness(args);
+        return fromHarness(r, `inserted new shot after ${input.after} in episode ${input.episode}`, {
+          paths: { script: `${project}/episodes/episode-${pad(input.episode)}/script.json` },
+        });
+      }
       default: {
         const exhaustive: never = input;
         return err(`unknown episode action: ${(exhaustive as { action?: string }).action ?? 'unknown'}`);

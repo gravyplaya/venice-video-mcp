@@ -34,9 +34,9 @@ flowchart LR
 |---|---|---|
 | `series` | `new`, `list`, `set_aesthetic`, `explore_aesthetic` | no |
 | `character` | `add`, `audition_voices`, `lock` | sometimes |
-| `episode` | `new`, `workshop`, `approve`, `storyboard`, `qa`, `qa_approve`, `fix_panel` | sometimes |
+| `episode` | `new`, `workshop`, `approve`, `storyboard`, `qa`, `qa_approve`, `fix_panel`, `insert_shot` | sometimes |
 | `media` | `generate_videos`, `override_audio`, `generate_music`, `validate` | **yes** (progress) |
-| `assemble` | `assemble`, `produce`, `edit_transcribe`, `edit_render`, `edit_timeline` | **yes** (progress) |
+| `assemble` | `assemble`, `produce`, `edit_transcribe`, `edit_render`, `edit_timeline`, `export_timeline` | **yes** (progress) |
 | `inspect` | `list`, `series`, `episode`, `shot`, `models`, `voices` | no |
 
 For exact per-action arguments see `skills/venice-mcp-cookbook/SKILL.md`.

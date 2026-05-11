@@ -149,6 +149,21 @@ export const EpisodeFixPanel = z.object({
   prompt: z.string().optional(),
 }).strict();
 
+export const EpisodeInsertShot = z.object({
+  action: z.literal('insert_shot'),
+  project: Project,
+  episode: Episode,
+  after: z.string().min(1).describe('Shot id to insert after; number ("5") or suffixed string ("5b")'),
+  description: z.string().min(1).describe('Description of the new shot (drives panel + video prompt)'),
+  shotType: z.string().default('action').describe('Shot type, default "action"'),
+  duration: z.string().default('5s').describe('Shot duration, e.g. "5s"'),
+  motion: z.enum(['low', 'medium', 'high']).default('medium'),
+  characters: z.string().optional().describe('Comma-separated character names'),
+  dialogue: z.string().optional().describe('Dialogue line; omit for action/insert shots'),
+  speaker: z.string().optional().describe('Dialogue speaker name (required if dialogue is set)'),
+  transition: z.string().default('CUT').describe('Transition into the next shot'),
+}).strict();
+
 export const EpisodeInput = z.discriminatedUnion('action', [
   EpisodeNew,
   EpisodeWorkshop,
@@ -157,6 +172,7 @@ export const EpisodeInput = z.discriminatedUnion('action', [
   EpisodeQa,
   EpisodeQaApprove,
   EpisodeFixPanel,
+  EpisodeInsertShot,
 ]);
 
 export const MediaGenerateVideos = z.object({
@@ -250,12 +266,23 @@ export const AssembleEditTimeline = z.object({
   wordsJson: z.string().optional(),
 }).strict();
 
+export const AssembleExportTimeline = z.object({
+  action: z.literal('export_timeline'),
+  project: Project,
+  episode: Episode,
+  format: z.enum(['fcpxml', 'premiere', 'davinci']).default('fcpxml').describe('Editor format: fcpxml (Final Cut Pro X), premiere (xmeml), davinci (DaVinci-tuned FCPXML)'),
+  fps: coercePositiveInt({ min: 1, max: 240 }).default(24),
+  width: coercePositiveInt({ max: 8192 }).default(1920),
+  height: coercePositiveInt({ max: 8192 }).default(1080),
+}).strict();
+
 export const AssembleInput = z.discriminatedUnion('action', [
   AssembleAssemble,
   AssembleProduce,
   AssembleEditTranscribe,
   AssembleEditRender,
   AssembleEditTimeline,
+  AssembleExportTimeline,
 ]);
 
 export const InspectInput = z.discriminatedUnion('action', [
@@ -330,8 +357,8 @@ export const CharacterShape = z.object({
 }).shape;
 
 export const EpisodeShape = z.object({
-  action: z.enum(['new', 'workshop', 'approve', 'storyboard', 'qa', 'qa_approve', 'fix_panel'])
-    .describe('Action: new, workshop (LLM-generate script), approve, storyboard (generate panels), qa (vision QA), qa_approve, fix_panel (multi-edit refine)'),
+  action: z.enum(['new', 'workshop', 'approve', 'storyboard', 'qa', 'qa_approve', 'fix_panel', 'insert_shot'])
+    .describe('Action: new, workshop (LLM-generate script), approve, storyboard (generate panels), qa (vision QA), qa_approve, fix_panel (multi-edit refine), insert_shot (add a new shot mid-script)'),
   project: Project.describe('series slug or path'),
   episode: Episode.optional().describe('episode number (required for all actions except new where it is auto-assigned)'),
   title: z.string().optional().describe('(new) episode title'),
@@ -346,8 +373,16 @@ export const EpisodeShape = z.object({
   force: z.boolean().optional().describe('(storyboard) regenerate all panels'),
   shots: z.string().optional().describe('(qa) shot range like "3-7" or "3,5,7"'),
   shot: Shot.optional().describe('(fix_panel) shot number'),
-  characters: z.string().optional().describe('(fix_panel) comma-separated character names'),
+  characters: z.string().optional().describe('(fix_panel, insert_shot) comma-separated character names'),
   prompt: z.string().optional().describe('(fix_panel) custom edit prompt'),
+  after: z.string().optional().describe('(insert_shot) shot id to insert after, number or suffixed string like "5b"'),
+  description: z.string().optional().describe('(insert_shot) description of the new shot'),
+  shotType: z.string().optional().describe('(insert_shot) shot type, default "action"'),
+  duration: z.string().optional().describe('(insert_shot) shot duration, e.g. "5s"'),
+  motion: z.enum(['low', 'medium', 'high']).optional().describe('(insert_shot) motion intensity, default medium'),
+  dialogue: z.string().optional().describe('(insert_shot) dialogue line; omit for action/insert shots'),
+  speaker: z.string().optional().describe('(insert_shot) dialogue speaker name; required if dialogue is set'),
+  transition: z.string().optional().describe('(insert_shot) transition into the next shot, default "CUT"'),
 }).shape;
 
 export const MediaShape = z.object({
@@ -364,10 +399,13 @@ export const MediaShape = z.object({
 }).shape;
 
 export const AssembleShape = z.object({
-  action: z.enum(['assemble', 'produce', 'edit_transcribe', 'edit_render', 'edit_timeline'])
-    .describe('Action: assemble (mix audio + burn subs), produce (full pipeline), edit_transcribe, edit_render (overlays), edit_timeline (filmstrip+waveform PNG)'),
-  project: Project.optional().describe('(assemble, produce) series slug or path'),
-  episode: Episode.optional().describe('(assemble, produce) episode number'),
+  action: z.enum(['assemble', 'produce', 'edit_transcribe', 'edit_render', 'edit_timeline', 'export_timeline'])
+    .describe('Action: assemble (mix audio + burn subs), produce (full pipeline), edit_transcribe, edit_render (overlays), edit_timeline (filmstrip+waveform PNG), export_timeline (XML for FCPX/Premiere/DaVinci)'),
+  project: Project.optional().describe('(assemble, produce, export_timeline) series slug or path'),
+  episode: Episode.optional().describe('(assemble, produce, export_timeline) episode number'),
+  format: z.enum(['fcpxml', 'premiere', 'davinci']).optional().describe('(export_timeline) editor format, default fcpxml'),
+  fps: z.coerce.number().int().positive().optional().describe('(export_timeline) frames per second, default 24'),
+  height: z.coerce.number().int().positive().optional().describe('(export_timeline) sequence height, default 1080'),
   subtitles: z.boolean().optional().describe('(assemble) burn-in subtitles, default true'),
   music: z.boolean().optional().describe('(assemble) mix music, default true'),
   ambient: z.boolean().optional().describe('(assemble) mix ambient bed, default true'),
@@ -392,7 +430,7 @@ export const AssembleShape = z.object({
   video: z.string().optional().describe('(edit_timeline) video file'),
   start: z.coerce.number().optional().describe('(edit_timeline) start sec'),
   end: z.coerce.number().optional().describe('(edit_timeline) end sec'),
-  width: z.coerce.number().int().positive().optional().describe('(edit_timeline) PNG width, default 1600'),
+  width: z.coerce.number().int().positive().optional().describe('(edit_timeline) PNG width, default 1600; (export_timeline) sequence width, default 1920'),
   frames: z.coerce.number().int().positive().optional().describe('(edit_timeline) filmstrip frame count, default 8'),
   silenceDb: z.coerce.number().optional().describe('(edit_timeline) silence dB threshold, default -30'),
   silenceMin: z.coerce.number().optional().describe('(edit_timeline) min silence sec, default 0.18'),
