@@ -19,6 +19,41 @@ export interface HarnessResult {
   durationMs: number;
 }
 
+const SAFE_ENV_KEYS = [
+  'ALL_PROXY',
+  'CI',
+  'COLORTERM',
+  'FORCE_COLOR',
+  'HARNESS_BIN',
+  'HARNESS_PATH',
+  'HARNESS_WORKSPACE',
+  'HOME',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'LOGNAME',
+  'NODE_EXTRA_CA_CERTS',
+  'NO_COLOR',
+  'NO_PROXY',
+  'PATH',
+  'SHELL',
+  'SSL_CERT_DIR',
+  'SSL_CERT_FILE',
+  'TEMP',
+  'TERM',
+  'TMP',
+  'TMPDIR',
+  'TZ',
+  'USER',
+  'VENICE_API_KEY',
+  'XDG_CACHE_HOME',
+  'XDG_CONFIG_HOME',
+  'XDG_DATA_HOME',
+  'XDG_RUNTIME_DIR',
+] as const;
+
 export async function runHarness(
   args: string[],
   opts: HarnessRunOptions = {},
@@ -27,12 +62,7 @@ export async function runHarness(
   const fullArgs = [...cfg.args, ...args];
   const start = Date.now();
 
-  const env: Record<string, string> = {
-    ...processEnvAsRecord(),
-    ...(opts.env ?? {}),
-  };
-  const apiKey = getVeniceApiKey();
-  if (apiKey && !env.VENICE_API_KEY) env.VENICE_API_KEY = apiKey;
+  const env = buildHarnessEnv(opts.env);
 
   return new Promise<HarnessResult>((resolvePromise, reject) => {
     const child = spawn(cfg.bin, fullArgs, {
@@ -124,10 +154,16 @@ export function harnessRoot(): string | null {
   return getHarnessRoot();
 }
 
-function processEnvAsRecord(): Record<string, string> {
+export function buildHarnessEnv(extraEnv: Record<string, string> = {}): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) {
+  for (const key of SAFE_ENV_KEYS) {
+    const value = process.env[key];
+    if (typeof value === 'string' && value.length > 0) out[key] = value;
+  }
+  for (const [k, v] of Object.entries(extraEnv)) {
     if (typeof v === 'string') out[k] = v;
   }
+  const apiKey = getVeniceApiKey();
+  if (apiKey && !out.VENICE_API_KEY) out.VENICE_API_KEY = apiKey;
   return out;
 }

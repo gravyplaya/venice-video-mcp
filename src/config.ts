@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
-import { resolve, isAbsolute, join, normalize, relative } from 'node:path';
+import { existsSync, realpathSync, statSync } from 'node:fs';
+import { dirname, resolve, isAbsolute, join, normalize, relative } from 'node:path';
 import 'dotenv/config';
 
 export interface HarnessConfig {
@@ -118,10 +118,25 @@ function resolveOnPath(cmd: string): string | null {
 }
 
 function ensureWithinWorkspace(candidate: string, workspace: string, label: string): string {
-  const rel = relative(workspace, candidate);
+  const workspaceReal = realpathSync(workspace);
+  const candidateAbs = isAbsolute(candidate) ? normalize(candidate) : resolve(workspace, candidate);
+  const boundaryPath = resolveBoundaryPath(candidateAbs);
+  const rel = relative(workspaceReal, boundaryPath);
   const isWithin = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
   if (!isWithin) {
-    throw new Error(`${label} must resolve inside HARNESS_WORKSPACE: ${workspace}`);
+    throw new Error(`${label} must resolve inside HARNESS_WORKSPACE after symlink resolution: ${workspace}`);
   }
-  return candidate;
+  return candidateAbs;
+}
+
+function resolveBoundaryPath(candidateAbs: string): string {
+  if (existsSync(candidateAbs)) return realpathSync(candidateAbs);
+
+  let cursor = candidateAbs;
+  while (!existsSync(cursor)) {
+    const parent = dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  return realpathSync(cursor);
 }

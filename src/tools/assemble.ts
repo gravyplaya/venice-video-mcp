@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { runHarness, harnessRoot } from '../harness.js';
-import { resolveProjectPath, resolveWorkspacePath, getVeniceApiKey } from '../config.js';
+import { runHarness, harnessRoot, buildHarnessEnv } from '../harness.js';
+import { resolveProjectPath, resolveWorkspacePath } from '../config.js';
 import { fromHarness, err, type ToolContent } from '../responses.js';
 import type { AssembleInputT } from '../schemas.js';
 import { makeProgressEmitter, type ProgressCtx } from '../progress.js';
@@ -131,12 +131,7 @@ async function runHarnessScript(
   if (!tsxBin) return null;
 
   const start = Date.now();
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (typeof v === 'string') env[k] = v;
-  }
-  const apiKey = getVeniceApiKey();
-  if (apiKey && !env.VENICE_API_KEY) env.VENICE_API_KEY = apiKey;
+  const env = buildHarnessEnv();
 
   return new Promise<{
     ok: boolean;
