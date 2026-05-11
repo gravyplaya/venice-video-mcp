@@ -21,6 +21,8 @@
     "build": "tsc",
     "dev": "tsx src/server.ts",
     "start": "node dist/server.js",
+    "test": "tsx --test test/**/*.test.ts",
+    "test:watch": "tsx --test --watch test/**/*.test.ts",
     "install-skills": "node scripts/install-skills.js",
     "update": "node scripts/update.js",
     "clean": "rm -rf dist",
