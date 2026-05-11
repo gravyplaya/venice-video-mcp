@@ -18,6 +18,23 @@ import { handleAssemble } from './tools/assemble.js';
 import { handleInspect } from './tools/inspect.js';
 import { err } from './responses.js';
 import type { ProgressCtx } from './progress.js';
+import {
+  formatNoticeForInstructions,
+  formatNoticeOneLine,
+  isUpdateCheckDisabled,
+  loadCachedNotice,
+  runUpdateCheck,
+} from './update-check.js';
+
+const BASE_INSTRUCTIONS =
+  'venice-video-mcp wraps the venice-video-harness CLI for consistency-first AI video creation. ' +
+  'Use the venice-mcp-pipeline skill for natural-language workflows and venice-mcp-cookbook for per-action argument examples.';
+
+const cachedNotice = isUpdateCheckDisabled() ? null : loadCachedNotice();
+const cachedInstructions = cachedNotice && cachedNotice.hasUpdates ? formatNoticeForInstructions(cachedNotice) : '';
+const initialInstructions = cachedInstructions
+  ? `${BASE_INSTRUCTIONS}\n\n${cachedInstructions}`
+  : BASE_INSTRUCTIONS;
 
 const server = new McpServer(
   { name: 'venice-video-mcp', version: '0.1.0' },
@@ -26,6 +43,7 @@ const server = new McpServer(
       tools: {},
       logging: {},
     },
+    instructions: initialInstructions,
   },
 );
 
@@ -130,6 +148,41 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write('[venice-video-mcp] connected on stdio\n');
+  scheduleUpdateCheck();
+}
+
+function scheduleUpdateCheck(): void {
+  if (isUpdateCheckDisabled()) {
+    process.stderr.write('[venice-video-mcp] update check disabled (VENICE_MCP_UPDATE_CHECK=0)\n');
+    return;
+  }
+  setImmediate(() => {
+    runUpdateCheck()
+      .then(async (notice) => {
+        if (!notice || !notice.hasUpdates) return;
+        const oneLine = formatNoticeOneLine(notice);
+        if (oneLine) process.stderr.write(`[venice-video-mcp] ${oneLine}\n`);
+        try {
+          await server.server.sendLoggingMessage({
+            level: 'info',
+            logger: 'venice-video-mcp',
+            data: {
+              kind: 'update-available',
+              message: oneLine,
+              components: notice.components,
+              checkedAt: notice.checkedAt,
+              docs: 'https://github.com/jordanurbs/venice-video-mcp#staying-up-to-date',
+            },
+          });
+        } catch {
+        }
+      })
+      .catch((cause) => {
+        process.stderr.write(
+          `[venice-video-mcp] update check failed: ${cause instanceof Error ? cause.message : String(cause)}\n`,
+        );
+      });
+  });
 }
 
 main().catch((e) => {

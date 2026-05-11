@@ -1,26 +1,16 @@
-#!/usr/bin/env tsx
 import { existsSync, lstatSync, readdirSync, readlinkSync } from 'node:fs';
 import { mkdir, symlink, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve, relative, isAbsolute } from 'node:path';
+import { dirname, join, resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-interface Args {
-  workspace: string | null;
-  global: boolean;
-  uninstall: boolean;
-  dryRun: boolean;
-  help: boolean;
-}
-
-function parseArgs(argv: string[]): Args {
-  const get = (flag: string): string | null => {
+function parseArgs(argv) {
+  const get = (flag) => {
     const i = argv.indexOf(flag);
     if (i === -1) return null;
     return argv[i + 1] ?? null;
   };
-  const has = (flag: string) => argv.includes(flag);
-
+  const has = (flag) => argv.includes(flag);
   return {
     workspace: get('--workspace') ?? get('-w'),
     global: has('--global') || has('-g'),
@@ -30,7 +20,7 @@ function parseArgs(argv: string[]): Args {
   };
 }
 
-function help(): void {
+function help() {
   console.log(`Usage: venice-video-mcp install-skills [options]
 
 Symlinks the venice-video-mcp companion skills into a target .claude/skills/ directory.
@@ -52,7 +42,7 @@ Examples:
 `);
 }
 
-async function ensureDir(dir: string, dryRun: boolean): Promise<void> {
+async function ensureDir(dir, dryRun) {
   if (existsSync(dir)) return;
   if (dryRun) {
     console.log(`would mkdir -p ${dir}`);
@@ -61,13 +51,7 @@ async function ensureDir(dir: string, dryRun: boolean): Promise<void> {
   await mkdir(dir, { recursive: true });
 }
 
-async function linkSkill(
-  source: string,
-  targetParent: string,
-  skillName: string,
-  uninstall: boolean,
-  dryRun: boolean,
-): Promise<void> {
+async function linkSkill(source, targetParent, skillName, uninstall, dryRun) {
   const target = join(targetParent, skillName);
   const exists = existsSync(target) || lstatSafe(target) !== null;
 
@@ -120,7 +104,7 @@ async function linkSkill(
   console.log(`linked ${target} -> ${source}`);
 }
 
-function lstatSafe(p: string) {
+function lstatSafe(p) {
   try {
     return lstatSync(p);
   } catch {
@@ -128,7 +112,7 @@ function lstatSafe(p: string) {
   }
 }
 
-async function main(): Promise<void> {
+async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     help();
@@ -159,7 +143,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const targets: string[] = [];
+  const targets = [];
   if (args.workspace) {
     const ws = isAbsolute(args.workspace) ? args.workspace : resolve(args.workspace);
     targets.push(join(ws, '.claude', 'skills'));

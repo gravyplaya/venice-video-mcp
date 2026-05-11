@@ -143,6 +143,8 @@ The MCP server reads these environment variables:
 | `HARNESS_PATH` | recommended | Absolute path to the harness repo (with built `dist/`) |
 | `HARNESS_BIN` | optional | Explicit path to a built harness CLI (`dist/mini-drama/cli.js`) |
 | `HARNESS_WORKSPACE` | optional | Where the MCP looks for series; defaults to cwd. Resolves project slugs against `<workspace>/output/<slug>/` |
+| `VENICE_MCP_UPDATE_CHECK` | optional | Set to `0` / `false` to disable the daily GitHub release check. See [Staying up to date](#staying-up-to-date). |
+| `GITHUB_TOKEN` | optional | If set, the update check uses authenticated GitHub API quota instead of the anonymous 60/hr bucket. Read-only `public_repo` scope is enough. |
 
 Resolution order for the harness binary:
 1. `HARNESS_BIN` if set and exists.
@@ -154,6 +156,69 @@ Resolution order for the harness binary:
 `HARNESS_WORKSPACE` should be a **dedicated directory you own** (e.g. `~/venice-projects/`), **not** the harness repo. All series materialize under `<HARNESS_WORKSPACE>/output/<slug>/` — the `output/` segment is hardcoded by the harness, so `HARNESS_WORKSPACE` controls the *parent* of `output/`, not its replacement. Pre-create the directory; the server refuses to start if it doesn't exist. If `HARNESS_WORKSPACE` is unset, the server falls back to `process.cwd()`, which is rarely what you want for GUI-launched MCP clients.
 
 `ffmpeg` and `ffprobe` must be on PATH (used by `assemble.assemble`, `produce`, `edit_render`, `edit_timeline`).
+
+---
+
+## Staying up to date
+
+Both this MCP and the `venice-video-harness` evolve fast — Venice ships new video, image, and audio models on a near-weekly cadence, and each one comes with its own prompt conventions, aspect-ratio quirks, character-consistency tricks, and provenance gotchas. The harness encodes those techniques (model registry, voice catalog, QA prompts, edit-pipeline rules) and the MCP's skills document them. Running an old install means the agent will literally not know that newer models exist or how to drive them correctly.
+
+To keep that pain manageable without making the project a black box, the server includes a **passive update check**. It is fully transparent — here is exactly what it does, when, and what it sends.
+
+### What runs
+
+On startup the server:
+
+1. Reads a local cache at `~/.venice-video-mcp/update-check.json` (24h TTL on success, 1h on failure). If a fresh result exists, the cached "update available" line is appended to the MCP server's `instructions` field on the `initialize` response, so the agent sees it immediately.
+2. After the stdio transport is connected, in the background it makes up to two HTTPS calls:
+   - `GET https://api.github.com/repos/jordanurbs/venice-video-mcp/releases/latest`
+   - `GET https://api.github.com/repos/jordanurbs/venice-video-harness/releases/latest` (only if `HARNESS_PATH` is set so the harness version is readable from `<HARNESS_PATH>/package.json`)
+3. Compares the returned `tag_name` against the local `package.json#version` of each repo (simple semver compare; pre-release tags ignored). Writes the result to the cache file.
+4. If anything is behind, sends one `notifications/message` with `level: "info"`, `logger: "venice-video-mcp"`, and a JSON payload of the form:
+
+   ```json
+   {
+     "kind": "update-available",
+     "message": "Update available: venice-video-mcp 0.1.0 → 0.2.0, venice-video-harness 0.3.2 → 0.4.0. Run `venice-video-mcp-update`.",
+     "components": [
+       { "name": "venice-video-mcp",     "current": "0.1.0", "latest": "0.2.0", "behind": true,  "releaseUrl": "..." },
+       { "name": "venice-video-harness", "current": "0.3.2", "latest": "0.4.0", "behind": true,  "releaseUrl": "..." }
+     ],
+     "checkedAt": "2026-05-11T19:30:00.000Z",
+     "docs": "https://github.com/jordanurbs/venice-video-mcp#staying-up-to-date"
+   }
+   ```
+
+   Cursor and Claude Desktop both surface `notifications/message` in their MCP log panel. The notification only fires when at least one component is actually behind; on a fully up-to-date install nothing is ever sent.
+
+### What it does *not* do
+
+- It never auto-modifies your install. No `git pull`, no `npm install`, no rebuild happens unless you explicitly run `venice-video-mcp-update`.
+- It never reports anything *about* you to GitHub. The requests are anonymous public-API GETs (no payload, no telemetry); GitHub's standard rate-limit headers are the only thing they observe. Set `GITHUB_TOKEN` if you want them counted against your authenticated quota instead of the shared 60/hr unauthenticated bucket.
+- It writes one file (`~/.venice-video-mcp/update-check.json`) and reads two (`<this-repo>/package.json`, `<HARNESS_PATH>/package.json`). Nothing else on disk is touched by the check.
+- All errors are swallowed. Offline, behind a proxy, GitHub API down, no releases tagged yet — the server starts normally and the check just doesn't fire that day.
+
+### Acting on the notification
+
+When you see the notice, run:
+
+```bash
+venice-video-mcp-update           # interactive: pulls + builds both repos
+venice-video-mcp-update --yes     # non-interactive
+venice-video-mcp-update --dry-run # show the plan without executing
+venice-video-mcp-update --mcp-only
+venice-video-mcp-update --harness-only
+```
+
+The updater refuses to run if either working tree has uncommitted changes — it will not clobber local edits. After it finishes, restart your MCP client so the new build is picked up.
+
+### Disabling the check
+
+Set `VENICE_MCP_UPDATE_CHECK=0` (also accepts `false` / `no` / `off`) in the `env` block of your `cursor.mcp.json` / `claude_desktop_config.json`. The startup banner will print `update check disabled` and no network call is ever made.
+
+### Why two repos
+
+The MCP shells out to the harness CLI, so the **harness is the one carrying new model support and consistency techniques**. The MCP itself only changes when a tool surface, schema, or skill needs to follow the harness. In practice the harness ships updates more often, and an out-of-date harness is the more common cause of "this newer Venice model isn't working." That's why the check tracks both and the updater pulls both by default.
 
 ---
 
@@ -182,28 +247,31 @@ For more recipes see `skills/venice-mcp-pipeline/SKILL.md`.
 ```text
 venice-video-mcp/
 ├── bin/
-│   ├── venice-video-mcp.js        # stdio entry shim (built dist)
-│   └── install-skills.js          # skill installer shim
+│   ├── venice-video-mcp.js          # stdio entry shim (built dist)
+│   ├── venice-video-mcp-update.js   # manual updater shim (git pull + build)
+│   └── install-skills.js            # skill installer shim
 ├── src/
-│   ├── server.ts                  # registers 6 tools, stdio transport
-│   ├── config.ts                  # HARNESS_BIN / HARNESS_PATH resolution
-│   ├── harness.ts                 # spawn wrapper, stdout streaming
-│   ├── progress.ts                # parses harness stdout → MCP progress
-│   ├── schemas.ts                 # zod discriminated unions + flat shapes
-│   ├── responses.ts               # { ok, paths, message } helpers
+│   ├── server.ts                    # registers 6 tools, stdio transport, schedules update check
+│   ├── update-check.ts              # GitHub releases poll, 24h cache, semver compare
+│   ├── config.ts                    # HARNESS_BIN / HARNESS_PATH resolution
+│   ├── harness.ts                   # spawn wrapper, stdout streaming
+│   ├── progress.ts                  # parses harness stdout → MCP progress
+│   ├── schemas.ts                   # zod discriminated unions + flat shapes
+│   ├── responses.ts                 # { ok, paths, message } helpers
 │   └── tools/
 │       ├── series.ts
 │       ├── character.ts
 │       ├── episode.ts
 │       ├── media.ts
-│       ├── assemble.ts            # also wraps the harness's edit-pipeline scripts
-│       └── inspect.ts             # reads JSON state directly (no spawn)
+│       ├── assemble.ts              # also wraps the harness's edit-pipeline scripts
+│       └── inspect.ts               # reads JSON state directly (no spawn)
 ├── skills/
 │   ├── venice-mcp-pipeline/SKILL.md
 │   ├── venice-mcp-cookbook/SKILL.md
 │   └── venice-mcp-troubleshooting/SKILL.md
 ├── scripts/
-│   └── install-skills.ts          # workspace + global symlink installer
+│   ├── install-skills.ts            # workspace + global symlink installer
+│   └── update.ts                    # `venice-video-mcp-update` implementation
 └── examples/
     ├── cursor.mcp.json
     └── claude-desktop.config.json

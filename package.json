@@ -6,7 +6,8 @@
   "main": "dist/server.js",
   "bin": {
     "venice-video-mcp": "./bin/venice-video-mcp.js",
-    "venice-video-mcp-install-skills": "./bin/install-skills.js"
+    "venice-video-mcp-install-skills": "./bin/install-skills.js",
+    "venice-video-mcp-update": "./bin/venice-video-mcp-update.js"
   },
   "files": [
     "bin",
@@ -20,7 +21,8 @@
     "build": "tsc",
     "dev": "tsx src/server.ts",
     "start": "node dist/server.js",
-    "install-skills": "tsx scripts/install-skills.ts",
+    "install-skills": "node scripts/install-skills.js",
+    "update": "node scripts/update.js",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build"
   },
