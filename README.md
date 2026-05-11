@@ -149,6 +149,10 @@ Resolution order for the harness binary:
 2. `venice-video` on PATH (i.e. you ran `npm link` in the harness).
 3. `HARNESS_PATH/dist/mini-drama/cli.js` if `HARNESS_PATH` is set.
 
+### Where your video projects land
+
+`HARNESS_WORKSPACE` should be a **dedicated directory you own** (e.g. `~/venice-projects/`), **not** the harness repo. All series materialize under `<HARNESS_WORKSPACE>/output/<slug>/` — the `output/` segment is hardcoded by the harness, so `HARNESS_WORKSPACE` controls the *parent* of `output/`, not its replacement. Pre-create the directory; the server refuses to start if it doesn't exist. If `HARNESS_WORKSPACE` is unset, the server falls back to `process.cwd()`, which is rarely what you want for GUI-launched MCP clients.
+
 `ffmpeg` and `ffprobe` must be on PATH (used by `assemble.assemble`, `produce`, `edit_render`, `edit_timeline`).
 
 ---
