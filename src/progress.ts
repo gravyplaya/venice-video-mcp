@@ -105,7 +105,8 @@ function parseShotProgress(line: string): ParsedShotProgress | null {
 }
 
 function parseFfmpegProgress(line: string): number | null {
-  if (!line.includes('frame=') && !line.includes('time=')) return null;
+  // Real ffmpeg stats lines include frame=; other logs may contain time=HH:MM:SS.
+  if (!line.includes('frame=')) return null;
   const m = line.match(FFMPEG_TIME_PATTERN);
   if (!m) return null;
   const h = parseInt(m[1], 10);

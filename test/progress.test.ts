@@ -44,6 +44,21 @@ test('progress emitter parses ffmpeg and percent progress', async () => {
   assert.equal(seen[1].params?.total, 100);
 });
 
+test('progress emitter ignores time= timestamps without ffmpeg frame=', async () => {
+  const seen: Array<{ params?: Record<string, unknown> }> = [];
+  const emitter = makeProgressEmitter({
+    progressToken: 'tok',
+    send: async (notification) => {
+      seen.push(notification as { params?: Record<string, unknown> });
+    },
+  });
+
+  emitter.onLine('Tool log: estimated time=01:05:07 remaining', 'stderr');
+  await flush();
+
+  assert.equal(seen.length, 0);
+});
+
 test('progress emitter does not treat ffmpeg elapsed seconds as a percentage', async () => {
   const seen: Array<{ params?: Record<string, unknown> }> = [];
   const emitter = makeProgressEmitter({
