@@ -155,7 +155,7 @@ export async function handleInspect(input: InspectInputT): Promise<ToolContent> 
           return ok('voice catalog', { data: { source: voicesPath, note: 'file not found' } });
         }
         const text = await readFile(voicesPath, 'utf8');
-        const voiceIds = extractVoiceIds(text);
+        const voiceIds = extractVoiceIdsForProvider(text, input.provider);
         return ok('voice catalog', {
           data: {
             source: voicesPath,
@@ -279,13 +279,25 @@ export function matchCategory(id: string, cat: string): boolean {
 
 export function extractVoiceIds(src: string): string[] {
   const ids = new Set<string>();
-  // Object-form entries (Qwen3 voices use `voice_id: '...'` — the regex
-  // matches the trailing `id:` substring inside `voice_id:`).
-  for (const m of src.matchAll(/id:\s*['"`]([^'"`]+)['"`]/g)) ids.add(m[1]);
-  // Kokoro voices are emitted as bare-string arrays fed to
-  // `buildVoiceGroup(...)`. Pull the last array literal of each call so we
-  // surface every Kokoro id (af_alloy, am_adam, ...) without picking up
-  // unrelated quoted strings elsewhere in the file.
+  for (const id of extractQwen3VoiceIds(src)) ids.add(id);
+  for (const id of extractKokoroVoiceIds(src)) ids.add(id);
+  return Array.from(ids).sort();
+}
+
+export function extractVoiceIdsForProvider(src: string, provider: 'kokoro' | 'qwen3' | 'all'): string[] {
+  if (provider === 'kokoro') return extractKokoroVoiceIds(src);
+  if (provider === 'qwen3') return extractQwen3VoiceIds(src);
+  return extractVoiceIds(src);
+}
+
+function extractQwen3VoiceIds(src: string): string[] {
+  const ids = new Set<string>();
+  for (const m of src.matchAll(/\b(?:voice_id|id):\s*['"`]([^'"`]+)['"`]/g)) ids.add(m[1]);
+  return Array.from(ids).sort();
+}
+
+function extractKokoroVoiceIds(src: string): string[] {
+  const ids = new Set<string>();
   for (const m of src.matchAll(/buildVoiceGroup\([^)]*?\[([^\]]+)\]\s*\)/g)) {
     for (const id of m[1].matchAll(/['"`]([a-z][a-z0-9_]+)['"`]/g)) ids.add(id[1]);
   }

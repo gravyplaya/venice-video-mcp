@@ -256,3 +256,65 @@ test('extractVoiceIds picks up Kokoro buildVoiceGroup arrays and Qwen3 entries',
     assert.ok(ids.includes(expected), `expected ${expected} in voice ids`);
   }
 });
+
+test('inspect voices filters ids by requested provider', async () => {
+  const harness = await mkdtemp(join(tmpdir(), 'venice-video-mcp-harness-'));
+  const previousHarnessPath = process.env.HARNESS_PATH;
+  process.env.HARNESS_PATH = harness;
+  try {
+    const veniceDir = join(harness, 'src', 'venice');
+    await mkdir(veniceDir, { recursive: true });
+    await writeFile(
+      join(veniceDir, 'voices.ts'),
+      `
+        export function buildKokoroVoices() {
+          return [
+            ...buildVoiceGroup('tts-kokoro', 'American English', 'female', [
+              'af_alloy', 'af_bella',
+            ]),
+          ];
+        }
+        export function buildQwen3Voices() {
+          return [
+            { voice_id: 'Vivian', provider_id: 'not_a_voice', name: 'Vivian' },
+          ];
+        }
+      `,
+      'utf8',
+    );
+
+    const kokoroResult = await handleInspect({ action: 'voices', provider: 'kokoro' });
+    const kokoroBody = kokoroResult.structuredContent as {
+      ok: boolean;
+      data: { ids: string[]; count: number; provider: string };
+    };
+    assert.equal(kokoroBody.ok, true);
+    assert.equal(kokoroBody.data.provider, 'kokoro');
+    assert.deepEqual(kokoroBody.data.ids, ['af_alloy', 'af_bella']);
+    assert.equal(kokoroBody.data.count, 2);
+
+    const qwen3Result = await handleInspect({ action: 'voices', provider: 'qwen3' });
+    const qwen3Body = qwen3Result.structuredContent as {
+      ok: boolean;
+      data: { ids: string[]; count: number; provider: string };
+    };
+    assert.equal(qwen3Body.ok, true);
+    assert.equal(qwen3Body.data.provider, 'qwen3');
+    assert.deepEqual(qwen3Body.data.ids, ['Vivian']);
+    assert.equal(qwen3Body.data.count, 1);
+
+    const allResult = await handleInspect({ action: 'voices', provider: 'all' });
+    const allBody = allResult.structuredContent as {
+      ok: boolean;
+      data: { ids: string[]; count: number; provider: string };
+    };
+    assert.equal(allBody.ok, true);
+    assert.equal(allBody.data.provider, 'all');
+    assert.deepEqual(allBody.data.ids, ['Vivian', 'af_alloy', 'af_bella']);
+    assert.equal(allBody.data.count, 3);
+  } finally {
+    if (previousHarnessPath === undefined) delete process.env.HARNESS_PATH;
+    else process.env.HARNESS_PATH = previousHarnessPath;
+    await rm(harness, { recursive: true, force: true });
+  }
+});

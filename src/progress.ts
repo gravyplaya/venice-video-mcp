@@ -71,7 +71,7 @@ export function makeProgressEmitter(ctx: ProgressCtx): ProgressEmitter {
 
     const ffmpeg = parseFfmpegProgress(line);
     if (ffmpeg !== null) {
-      void emit(ffmpeg, line, 100);
+      void emit(ffmpeg, line);
       return;
     }
 

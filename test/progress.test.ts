@@ -39,9 +39,29 @@ test('progress emitter parses ffmpeg and percent progress', async () => {
 
   assert.equal(seen.length, 2);
   assert.equal(seen[0].params?.progress, 12);
-  assert.equal(seen[0].params?.total, 100);
+  assert.equal(seen[0].params?.total, undefined);
   assert.equal(seen[1].params?.progress, 45);
   assert.equal(seen[1].params?.total, 100);
+});
+
+test('progress emitter does not treat ffmpeg elapsed seconds as a percentage', async () => {
+  const seen: Array<{ params?: Record<string, unknown> }> = [];
+  const emitter = makeProgressEmitter({
+    progressToken: 'tok',
+    send: async (notification) => {
+      seen.push(notification as { params?: Record<string, unknown> });
+    },
+  });
+
+  emitter.onLine(
+    'frame= 100 fps=25 q=28.0 size=2048kB time=00:02:05 bitrate=700kbits/s',
+    'stderr',
+  );
+  await flush();
+
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].params?.progress, 125);
+  assert.equal(seen[0].params?.total, undefined);
 });
 
 test('progress emitter is inert without token/send', () => {
