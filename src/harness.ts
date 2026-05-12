@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getHarnessConfig, getHarnessRoot, getVeniceApiKey } from './config.js';
+import { LineBuffer } from './line-buffer.js';
 
 export interface HarnessRunOptions {
   onProgress?: (line: string, stream: 'stdout' | 'stderr') => void;
@@ -19,6 +20,25 @@ export interface HarnessResult {
   stderr: string;
   command: string;
   durationMs: number;
+}
+
+/**
+ * Invoke a user-supplied progress callback without letting a thrown error
+ * escape into the stdio `'data'` / `'close'` event handlers. Used by both
+ * `runHarness` and `runHarnessScript` so they have identical robustness
+ * guarantees — historically `runHarnessScript` invoked `onProgress` directly,
+ * so a throwing callback would propagate out of the stream handler.
+ */
+export function invokeProgressSafely(
+  onProgress: ((line: string, stream: 'stdout' | 'stderr') => void) | undefined,
+  line: string,
+  stream: 'stdout' | 'stderr',
+): void {
+  if (!onProgress) return;
+  try {
+    onProgress(line, stream);
+  } catch {
+  }
 }
 
 const SAFE_ENV_KEYS = [
@@ -77,8 +97,8 @@ export async function runHarness(
     const MAX_CAPTURE_CHARS = 200_000;
     let stdoutText = '';
     let stderrText = '';
-    let stdoutBuf = '';
-    let stderrBuf = '';
+    const stdoutBuf = new LineBuffer();
+    const stderrBuf = new LineBuffer();
     let timedOut = false;
     const appendBounded = (existing: string, chunk: string): string => {
       if (chunk.length >= MAX_CAPTURE_CHARS) return chunk.slice(-MAX_CAPTURE_CHARS);
@@ -87,31 +107,16 @@ export async function runHarness(
       return combined.slice(combined.length - MAX_CAPTURE_CHARS);
     };
 
-    const onLine = (line: string, stream: 'stdout' | 'stderr') => {
-      if (opts.onProgress) {
-        try {
-          opts.onProgress(line, stream);
-        } catch {
-        }
-      }
-    };
-
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
       stdoutText = appendBounded(stdoutText, chunk);
-      stdoutBuf += chunk;
-      const lines = stdoutBuf.split('\n');
-      stdoutBuf = lines.pop() ?? '';
-      for (const line of lines) onLine(line, 'stdout');
+      for (const line of stdoutBuf.push(chunk)) invokeProgressSafely(opts.onProgress, line, 'stdout');
     });
 
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => {
       stderrText = appendBounded(stderrText, chunk);
-      stderrBuf += chunk;
-      const lines = stderrBuf.split('\n');
-      stderrBuf = lines.pop() ?? '';
-      for (const line of lines) onLine(line, 'stderr');
+      for (const line of stderrBuf.push(chunk)) invokeProgressSafely(opts.onProgress, line, 'stderr');
     });
 
     let timeoutHandle: NodeJS.Timeout | null = null;
@@ -135,8 +140,10 @@ export async function runHarness(
 
     child.on('close', (code, sig) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      if (stdoutBuf) onLine(stdoutBuf, 'stdout');
-      if (stderrBuf) onLine(stderrBuf, 'stderr');
+      const trailingStdout = stdoutBuf.flush();
+      if (trailingStdout) invokeProgressSafely(opts.onProgress, trailingStdout, 'stdout');
+      const trailingStderr = stderrBuf.flush();
+      if (trailingStderr) invokeProgressSafely(opts.onProgress, trailingStderr, 'stderr');
 
       const result: HarnessResult = {
         ok: code === 0 && !timedOut,
@@ -206,8 +213,8 @@ export async function runHarnessScript(
     const MAX_CAPTURE_CHARS = 200_000;
     let stdoutText = '';
     let stderrText = '';
-    let stdoutBuf = '';
-    let stderrBuf = '';
+    const stdoutBuf = new LineBuffer();
+    const stderrBuf = new LineBuffer();
     let timedOut = false;
     const appendBounded = (existing: string, chunk: string): string => {
       if (chunk.length >= MAX_CAPTURE_CHARS) return chunk.slice(-MAX_CAPTURE_CHARS);
@@ -219,18 +226,12 @@ export async function runHarnessScript(
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
       stdoutText = appendBounded(stdoutText, chunk);
-      stdoutBuf += chunk;
-      const lines = stdoutBuf.split('\n');
-      stdoutBuf = lines.pop() ?? '';
-      if (opts.onProgress) for (const l of lines) opts.onProgress(l, 'stdout');
+      for (const line of stdoutBuf.push(chunk)) invokeProgressSafely(opts.onProgress, line, 'stdout');
     });
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => {
       stderrText = appendBounded(stderrText, chunk);
-      stderrBuf += chunk;
-      const lines = stderrBuf.split('\n');
-      stderrBuf = lines.pop() ?? '';
-      if (opts.onProgress) for (const l of lines) opts.onProgress(l, 'stderr');
+      for (const line of stderrBuf.push(chunk)) invokeProgressSafely(opts.onProgress, line, 'stderr');
     });
 
     let timeoutHandle: NodeJS.Timeout | null = null;
@@ -252,8 +253,10 @@ export async function runHarnessScript(
     });
     child.on('close', (code, sig) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      if (opts.onProgress && stdoutBuf) opts.onProgress(stdoutBuf, 'stdout');
-      if (opts.onProgress && stderrBuf) opts.onProgress(stderrBuf, 'stderr');
+      const trailingStdout = stdoutBuf.flush();
+      if (trailingStdout) invokeProgressSafely(opts.onProgress, trailingStdout, 'stdout');
+      const trailingStderr = stderrBuf.flush();
+      if (trailingStderr) invokeProgressSafely(opts.onProgress, trailingStderr, 'stderr');
       resolvePromise({
         ok: code === 0 && !timedOut,
         code,

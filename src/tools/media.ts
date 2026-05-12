@@ -29,7 +29,7 @@ export async function handleMedia(input: MediaInputT, ctx: ProgressCtx = {}): Pr
         return fromHarness(r, `audio overrides applied for episode ${input.episode}`);
       }
       case 'generate_music': {
-        const args = ['generate-music', '-p', project, ...epArgs, '--duration', input.duration];
+        const args = ['generate-music', '-p', project, ...epArgs, '--duration', String(input.duration)];
         if (input.prompt) args.push('--prompt', input.prompt);
         const r = await runHarness(args, { signal: ctx.signal, timeoutMs: 15 * 60 * 1000 });
         return fromHarness(r, `music generated for episode ${input.episode}`, {

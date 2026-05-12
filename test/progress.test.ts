@@ -79,6 +79,46 @@ test('progress emitter does not treat ffmpeg elapsed seconds as a percentage', a
   assert.equal(seen[0].params?.total, undefined);
 });
 
+test('progress emitter ignores mid-number percent matches like "1000%"', async () => {
+  const seen: Array<{ params?: Record<string, unknown> }> = [];
+  const emitter = makeProgressEmitter({
+    progressToken: 'tok',
+    send: async (notification) => {
+      seen.push(notification as { params?: Record<string, unknown> });
+    },
+  });
+
+  emitter.onLine('saved 1000% disk space', 'stdout');
+  emitter.onLine('cpu spike 200% momentary', 'stdout');
+  emitter.onLine('unexpected 12345% growth', 'stdout');
+  await flush();
+
+  assert.equal(
+    seen.length,
+    0,
+    `no percent emit expected for out-of-range / multi-digit prefixes; got: ${seen
+      .map((n) => `progress=${n.params?.progress}`)
+      .join(', ')}`,
+  );
+});
+
+test('progress emitter still accepts well-formed percent lines', async () => {
+  const seen: Array<{ params?: Record<string, unknown> }> = [];
+  const emitter = makeProgressEmitter({
+    progressToken: 'tok',
+    send: async (notification) => {
+      seen.push(notification as { params?: Record<string, unknown> });
+    },
+  });
+
+  emitter.onLine('progress 12.5% so far', 'stdout');
+  await flush();
+
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].params?.progress, 12.5);
+  assert.equal(seen[0].params?.total, 100);
+});
+
 test('progress emitter is inert without token/send', () => {
   const emitter = makeProgressEmitter({});
   emitter.onLine('Generating shot 1 of 4', 'stdout');

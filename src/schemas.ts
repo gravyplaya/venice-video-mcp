@@ -195,7 +195,7 @@ export const MediaGenerateMusic = z.object({
   project: Project,
   episode: Episode,
   prompt: z.string().optional(),
-  duration: z.string().default('60'),
+  duration: coercePositiveInt({ min: 1, max: 600 }).default(60),
 }).strict();
 
 export const MediaValidate = z.object({

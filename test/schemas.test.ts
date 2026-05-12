@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AssembleInput, EpisodeInput, MediaInput, SeriesInput } from '../src/schemas.js';
+import { z } from 'zod';
+import { AssembleInput, EpisodeInput, MediaInput, MediaShape, SeriesInput } from '../src/schemas.js';
 
 test('SeriesInput applies defaults for new action', () => {
   const parsed = SeriesInput.parse({
@@ -58,6 +59,51 @@ test('MediaInput.generate_ambient applies default duration and enforces layer en
     prompt: 'storm sounds',
   });
   assert.equal(bad.success, false);
+});
+
+test('MediaInput.generate_music accepts both string and numeric duration (matches MediaShape)', () => {
+  const stringDuration = MediaInput.safeParse({
+    action: 'generate_music',
+    project: 'the-audacity',
+    episode: 1,
+    prompt: 'late-night talk-show theme',
+    duration: '60',
+  });
+  assert.equal(stringDuration.success, true, 'string duration should parse');
+
+  const numericDuration = MediaInput.safeParse({
+    action: 'generate_music',
+    project: 'the-audacity',
+    episode: 1,
+    prompt: 'late-night talk-show theme',
+    duration: 90,
+  });
+  assert.equal(
+    numericDuration.success,
+    true,
+    `numeric duration should be accepted because MediaShape advertises string|number; got: ${
+      numericDuration.success ? '' : numericDuration.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
+    }`,
+  );
+
+  const omitted = MediaInput.parse({
+    action: 'generate_music',
+    project: 'the-audacity',
+    episode: 1,
+  });
+  if (omitted.action !== 'generate_music') throw new Error('expected generate_music');
+  assert.ok(
+    omitted.duration === 60 || omitted.duration === '60',
+    `default should be 60 or "60", got ${JSON.stringify(omitted.duration)}`,
+  );
+
+  const shape = z.object(MediaShape).safeParse({
+    action: 'generate_music',
+    project: 'the-audacity',
+    episode: 1,
+    duration: 90,
+  });
+  assert.equal(shape.success, true, 'MediaShape must continue to accept numeric duration');
 });
 
 test('AssembleInput accepts mix_audio with project + episode', () => {

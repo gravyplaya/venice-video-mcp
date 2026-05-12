@@ -32,7 +32,10 @@ const QUEUE_PATTERN = new RegExp(
   'i',
 );
 const FFMPEG_TIME_PATTERN = /\btime=(\d{2}):(\d{2}):(\d{2})/;
-const PERCENT_PATTERN = /(\d{1,3}(?:\.\d+)?)\s*%/;
+// Negative lookbehind keeps us from latching onto mid-number digits: for a
+// line like "saved 1000% disk space" the engine would otherwise match the
+// substring "000%" and emit a spurious progress=0 notification.
+const PERCENT_PATTERN = /(?<![\d.])(\d{1,3}(?:\.\d+)?)\s*%/;
 
 export function makeProgressEmitter(ctx: ProgressCtx): ProgressEmitter {
   const { progressToken, send } = ctx;
