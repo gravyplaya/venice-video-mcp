@@ -13,13 +13,24 @@ This skill is the workflow brain for the **venice-video-mcp** server. It tells y
 |---|---|---|
 | `series` | `new`, `list`, `set_aesthetic`, `explore_aesthetic` | no |
 | `character` | `add`, `audition_voices`, `lock` | sometimes (image gen) |
-| `episode` | `new`, `workshop`, `approve`, `storyboard`, `qa`, `qa_approve`, `fix_panel` | sometimes (storyboard, qa) |
-| `media` | `generate_videos`, `override_audio`, `generate_music`, `validate` | **yes** |
-| `assemble` | `assemble`, `produce`, `edit_transcribe`, `edit_render`, `edit_timeline` | **yes** |
+| `episode` | `new`, `workshop`, `approve`, `storyboard`, `qa`, `qa_approve`, `fix_panel`, `insert_shot` | sometimes (storyboard, qa) |
+| `media` | `generate_videos`, `override_audio`, `generate_music`, `generate_ambient`, `validate` | **yes** |
+| `assemble` | `assemble`, `produce`, `mix_audio`, `edit_transcribe`, `edit_render`, `edit_timeline`, `export_timeline` | **yes** (except `export_timeline`, which is cheap XML write) |
 | `inspect` | `list`, `series`, `episode`, `shot`, `models`, `voices` | no |
 
 For full per-action argument shapes see the **venice-mcp-cookbook** skill.
 For failures, gotchas, and anti-patterns see **venice-mcp-troubleshooting**.
+
+## What the underlying harness now does for you (v2.1.x)
+
+Several behaviours the MCP relied on the agent to orchestrate are now automatic inside the harness. You don't have to script them — but you should know they're running so you can interpret stdout:
+
+- **Seedance scene-level multi-shot.** When adjacent shots share the same characters and location, the harness now plans them as a single Seedance multi-shot generation by default. You won't see "shot 5 of 12" — you'll see "unit 3 of 8 (covers shots 5-6)". This is fine; identity stays anchored across the unit.
+- **Motion-classified video routing.** Each shot's `motion` field (`low | medium | high`) drives the planner. Low/medium-motion dialogue shots with a visible face route to `wan-2-7-image-to-video` for lip-sync; high-motion or face-occluded shots stay on the R2V model. `episode.insert_shot` lets you set `motion` directly. To change motion on an existing shot, edit `script.json`.
+- **Per-act music cues with crossfade.** If the episode script has a `musicCues[]` array (manually authored or via `episode.workshop` for series that opt in), `assemble.assemble` / `produce` will render and crossfade them automatically. The single-bed `media.generate_music` path still works — when both exist, the cues win.
+- **LUFS audio mix.** The assembler now runs a final-pass to -16 LUFS integrated / -1 dBTP true peak by default. SFX clips are trimmed to ≤2s with a 0.3s fade-out. Episode-level overrides go in `script.audioMix`.
+- **Wan 2.7 audio pre-flight.** When a shot's `audioUrl` is shorter than 3 seconds, the harness pads it to 3s automatically (Wan 2.7 returns 400 otherwise). You'll see a "padded audio_url N.NNs -> 3.00s" line in stdout.
+- **Silent-rejection guard.** Every Venice response is checked for the "no output produced" pattern that occasionally slips past a 200 OK. The harness retries up to 3 times and surfaces a structured error instead of returning a zero-byte file.
 
 ## Mental model
 
@@ -81,10 +92,43 @@ The user says: "Make episode 3 about Y."
 7. For each flagged shot: `episode.fix_panel { project, episode, shot, characters?, prompt? }`. Re-run QA after.
 8. `episode.qa_approve { project, episode, notes? }`.
 9. `media.generate_videos { project, episode }` --- LONG. Stream progress.
-10. (Optional) `media.generate_music { project, episode, prompt?, duration? }`.
-11. `assemble.assemble { project, episode, ... }` --- final mp4 with subtitles + music + ambient bed.
+10. (Optional) `media.generate_music { project, episode, prompt?, duration? }` --- only needed if the script has no `musicCues[]`; per-act cues render automatically during assembly.
+11. `assemble.assemble { project, episode, ... }` --- final mp4 with subtitles + music + ambient bed, mixed to -16 LUFS.
 
 If the user said "just produce it from approved script" jump from step 8 to `assemble.produce` instead of running 9-11 separately.
+
+### Recipe 3b: Add a beat to an already-rendered episode
+The user says: "Insert a reaction shot after shot 5 of episode 3."
+
+1. `episode.insert_shot { project, episode, after: "5", description, shotType?, duration?, motion?, characters?, dialogue?, speaker?, transition? }` --- assigns a suffix id like `5b` so existing shot numbers (and their already-rendered panels/clips) stay stable.
+2. `episode.storyboard { project, episode, force: false }` --- only the new shot's panel is generated; existing panels are left in place.
+3. `episode.qa { project, episode, shots: "5b" }` then `episode.qa_approve` after fixes.
+4. `media.generate_videos { project, episode }` --- generates the missing clip only; existing clips are kept.
+5. `assemble.assemble { project, episode, ... }` --- re-stitches with the new shot in place.
+
+### Recipe 4: Generate ambient beds + run the script-aware mixer
+The user says: "Add a rain bed to episode 2 and re-mix it." or "Mix this episode with ambient layering instead of the basic assembler."
+
+Ambient beds and the script-aware mixer are an alternative to the plain `assemble.assemble` path:
+
+1. Confirm via `inspect.episode { project, episode }` that the episode is QA-approved and `media.generate_videos` has produced clips. Inspect also reports the `ambientLayers[]` already on disk.
+2. For each layer you want, call `media.generate_ambient { project, episode, layer, prompt, duration? }`. Pick `layer` from `rain-heavy | rain | crowd | quiet-night`; the filename / discovery layer is fixed to those four.
+3. (Optional) `media.generate_music { project, episode, prompt?, duration? }` — or rely on `script.musicCues[]` if defined.
+4. `assemble.mix_audio { project, episode }` — script-aware per-shot mix. Writes `episode-NNN-final-nosubs.mp4` then burns subtitles to `episode-NNN-final.mp4` if `subtitles.srt` exists. This **replaces** `assemble.assemble` for the episode (same output filename).
+
+Use `assemble.assemble` for the simple, deterministic path; use `assemble.mix_audio` when you've authored ambient beds and want the harness to vary the mix per shot (e.g. dialogue shots get less ambient, action shots get more, fades at scene boundaries).
+
+### Recipe 5: Hand off to a non-linear editor (FCP X / Premiere / DaVinci)
+The user says: "Open episode 2 in [Resolve | Premiere | Final Cut]."
+
+After `media.generate_videos` has produced clips:
+
+1. `assemble.export_timeline { project, episode, format: 'fcpxml' | 'premiere' | 'davinci', fps?, width?, height? }`
+2. Tell the user the output path. The extension makes the target editor unambiguous:
+   - `fcpxml`   → `episode-NNN.fcpxml`         (Final Cut Pro X — File ▸ Import ▸ XML…)
+   - `premiere` → `episode-NNN.premiere.xml`   (Premiere Pro — File ▸ Import…)
+   - `davinci`  → `episode-NNN.resolve.fcpxml` (DaVinci Resolve — File ▸ Import ▸ Timeline…)
+3. You can export multiple formats from the same episode — they coexist on disk because of the format-specific extensions.
 
 ### Recipe 4: Edit existing footage (no Venice generation)
 The user says: "Cut down this footage / trim filler words / re-cut this episode."
@@ -103,17 +147,24 @@ This path does NOT use the harness's series/episode model. It operates on raw me
 
 When you need to know what exists before acting, use `inspect`:
 - `inspect { action: 'list' }` --- enumerate all series in the workspace
-- `inspect { action: 'series', project }` --- read series.json (aesthetic, characters, episode list)
-- `inspect { action: 'episode', project, episode }` --- script versions, approval state, final video path, shot count
+- `inspect { action: 'series', project }` --- read series.json (aesthetic, characters, episode list, `videoDefaults` incl. `lipSyncModel` / `seedanceCompatibility` / `imageDefaults`, `storyboardAspectRatio`)
+- `inspect { action: 'episode', project, episode }` --- script versions, approval state, final video path, shot count, `musicCueCount`, `audioMix` flag, `ambientLayers[]` (rain-heavy / rain / crowd / quiet-night on disk), `hasMusic`, `timelineExports[]` (FCPXML/Premiere/DaVinci files on disk)
 - `inspect { action: 'shot', project, episode, shot }` --- list shot-NNN.* files
-- `inspect { action: 'models', category? }` --- model registry from the harness
+- `inspect { action: 'models', category? }` --- model registry from the harness (includes the v2.1 additions: Wan 2.7, Kling O3 4K, HappyHorse 1.0, GPT Image 2)
 - `inspect { action: 'voices', provider? }` --- TTS voice catalog
 
 `inspect` is cheap (no spawn). Call it freely before mutating tools.
 
 ## Long-running operations and progress
 
-`media.generate_videos`, `media.generate_music`, `assemble.assemble`, `assemble.produce`, and `assemble.edit_render` can take many minutes. The MCP server emits `notifications/progress` for each. If you set a `progressToken` in the request `_meta`, you'll receive shot-N-of-M, ffmpeg time codes, and queue/poll status updates.
+`media.generate_videos`, `media.generate_music`, `assemble.assemble`, `assemble.produce`, and `assemble.edit_render` can take many minutes. The MCP server emits `notifications/progress` for each. If you set a `progressToken` in the request `_meta`, you'll receive unit/shot N-of-M, ffmpeg time codes, and queue/poll status updates.
+
+Heads-up on stdout patterns the harness emits in v2.1.x that you should NOT mistake for failures:
+
+- `unit X of Y (covers shots A-B)` — scene-level multi-shot generation; one Venice call covers multiple consecutive shots.
+- `padded audio_url N.NNs -> 3.00s` — Wan 2.7 audio pre-flight padded a short clip.
+- `routing shot N to wan-2-7-image-to-video` — motion classifier picked the lip-sync model for that shot.
+- `LUFS final pass: integrated -X.X / true-peak -Y.Y` — assembler is normalising to -16 LUFS.
 
 Don't poll `inspect` during a long-running call --- you already get progress notifications.
 

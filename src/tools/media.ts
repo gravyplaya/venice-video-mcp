@@ -1,4 +1,4 @@
-import { runHarness } from '../harness.js';
+import { runHarness, runHarnessScript } from '../harness.js';
 import { resolveProjectPath } from '../config.js';
 import { fromHarness, err, type ToolContent } from '../responses.js';
 import type { MediaInputT } from '../schemas.js';
@@ -43,6 +43,26 @@ export async function handleMedia(input: MediaInputT, ctx: ProgressCtx = {}): Pr
         const args = [cmd, '-p', project, ...epArgs];
         const r = await runHarness(args, { signal: ctx.signal, timeoutMs: 10 * 60 * 1000 });
         return fromHarness(r, `validated episode ${input.episode}`, { data: { tool: cmd } });
+      }
+      case 'generate_ambient': {
+        const episodeDir = `${project}/episodes/episode-${pad(input.episode)}`;
+        const audioDir = `${episodeDir}/audio`;
+        const outputPath = `${audioDir}/ambient-${input.layer}.mp3`;
+        const emitter = makeProgressEmitter(ctx);
+        const r = await runHarnessScript(
+          'scripts/generate-ambient-bed.ts',
+          [input.prompt, outputPath, String(input.duration)],
+          {
+            onProgress: emitter.onLine,
+            signal: ctx.signal,
+            timeoutMs: 15 * 60 * 1000,
+          },
+        );
+        if (!r) return err('cannot locate harness root; set HARNESS_PATH or HARNESS_BIN');
+        return fromHarness(r, `generated ambient bed "${input.layer}" for episode ${input.episode}`, {
+          paths: { ambientPath: outputPath, audioDir },
+          data: { layer: input.layer, durationSec: input.duration },
+        });
       }
       default: {
         const exhaustive: never = input;

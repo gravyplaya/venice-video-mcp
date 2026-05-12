@@ -4,6 +4,8 @@ A token-lean **MCP server** for the [venice-video-harness](https://github.com/jo
 
 The server exposes **6 verb tools** (~600 always-loaded tokens) instead of 20+ granular ones. Workflow knowledge lives in **3 companion skills** that the agent loads on demand.
 
+> Tracks **venice-video-harness v2.1.x**: Seedance scene-level multi-shot default, motion-classified routing (Wan 2.7 lip-sync for low/medium-motion dialogue), per-act music cues with crossfade, LUFS audio mix, FCPXML / Premiere xmeml / DaVinci-tuned timeline export, `insert-shot` mid-script, and the latest model families (Wan 2.7, Kling O3 4K, HappyHorse 1.0, GPT Image 2). The MCP shells out to the harness CLI, so it picks up new harness commits automatically — only the tool surface / schemas / skills need to follow when the harness changes shape.
+
 ---
 
 ## What this is
@@ -35,11 +37,25 @@ flowchart LR
 | `series` | `new`, `list`, `set_aesthetic`, `explore_aesthetic` | no |
 | `character` | `add`, `audition_voices`, `lock` | sometimes |
 | `episode` | `new`, `workshop`, `approve`, `storyboard`, `qa`, `qa_approve`, `fix_panel`, `insert_shot` | sometimes |
-| `media` | `generate_videos`, `override_audio`, `generate_music`, `validate` | **yes** (progress) |
-| `assemble` | `assemble`, `produce`, `edit_transcribe`, `edit_render`, `edit_timeline`, `export_timeline` | **yes** (progress) |
+| `media` | `generate_videos`, `override_audio`, `generate_music`, `generate_ambient`, `validate` | **yes** (progress) |
+| `assemble` | `assemble`, `produce`, `mix_audio`, `edit_transcribe`, `edit_render`, `edit_timeline`, `export_timeline` | **yes** (progress; `export_timeline` is a fast XML write) |
 | `inspect` | `list`, `series`, `episode`, `shot`, `models`, `voices` | no |
 
 For exact per-action arguments see `skills/venice-mcp-cookbook/SKILL.md`.
+
+### What the underlying harness does for you (v2.1.x)
+
+Several behaviours the MCP relied on the agent to orchestrate are now automatic inside the harness:
+
+- **Scene-level Seedance multi-shot grouping** of adjacent same-character / same-location shots, so a single Venice generation can cover multiple consecutive shots while keeping identity anchored. Set `mustStaySingle: true` on a shot in `script.json` to opt out.
+- **Motion-classified video routing** — shots with `motion: 'low' | 'medium'` and `faceVisible: true` route to `wan-2-7-image-to-video` for lip-sync; high-motion or face-occluded shots stay on the R2V model. `episode.insert_shot` accepts `motion` directly.
+- **Per-act music cues with crossfade + per-shot `musicHold` automation** when `script.json` defines a `musicCues[]` array. The single-bed `media.generate_music` path still works for episodes that want one uniform mood.
+- **LUFS audio mix** — final pass to -16 LUFS integrated / -1 dBTP true peak; SFX trim to ≤2s with a 0.3s fade. Override per-episode via `script.audioMix`.
+- **Wan 2.7 audio pre-flight** — `audio_url` clips shorter than 3s are auto-padded.
+- **Silent-rejection guard** — Venice "200 OK but no output" responses are detected and retried.
+- **NLE timeline export** — `assemble.export_timeline` writes FCPXML 1.10, Premiere xmeml v5, or a DaVinci-tuned FCPXML using format-specific file extensions so multiple exports can coexist for the same episode.
+
+`inspect.series` and `inspect.episode` surface the relevant fields (`storyboardAspectRatio`, `videoDefaults.lipSyncModel`, `videoDefaults.seedanceCompatibility`, `videoDefaults.imageDefaults`, `musicCueCount`, `audioMix`, `timelineExports[]`) so the agent can plan around them without parsing `series.json` by hand.
 
 ## Companion skills
 

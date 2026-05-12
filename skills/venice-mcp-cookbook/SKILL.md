@@ -13,6 +13,8 @@ Conventions:
 - `episode` and `shot` are integers (1-based).
 - Coercion is enabled: passing `"1"` for a number works, but prefer real numbers.
 
+Defaults reflect venice-video-harness v2.1.x: video defaults are Seedance 2.0 i2v / R2V with auto-fallback to Kling O3 for 3+ character scenes; dialogue shots with `motion: 'low' | 'medium'` and a visible face route to `wan-2-7-image-to-video` for lip-sync. Edit-model defaults are `seedream-v5-lite-edit` (Seedance-compatible). For non-face-bearing panels, `gpt-image-2-edit` / `nano-banana-pro-edit` are valid alternatives.
+
 ---
 
 ## series
@@ -250,6 +252,8 @@ Replace the model-native audio with Venice TTS dialogue and/or generated SFX.
 ```
 
 ### `media.generate_music`
+Generates a single background bed. If `script.json` defines a `musicCues[]` array (per-act cues with crossfade + `musicHold` automation), prefer authoring those cues directly --- the assembler will render and crossfade them during `assemble.assemble` / `produce`. The single-bed `generate_music` path is still useful for episodes that want one uniform mood.
+
 ```json
 {
   "action": "generate_music",
@@ -266,12 +270,38 @@ Default validates the assembled episode. Set `videoOutputs: true` to check raw s
 { "action": "validate", "project": "the-audacity", "episode": 1, "videoOutputs": true }
 ```
 
+### `media.generate_ambient`
+Generates a Venice SFX ambient bed and writes it to `<episodeDir>/audio/ambient-<layer>.mp3`. `layer` is constrained to the four slots the harness recognises (`rain-heavy`, `rain`, `crowd`, `quiet-night`); the basic `assemble.assemble` path picks up the first matching file, and `assemble.mix_audio` blends all of them per-shot according to `script.json`. Idempotent: re-running overwrites the layer (archive yourself first if you need to keep the prior take).
+
+```json
+{
+  "action": "generate_ambient",
+  "project": "the-audacity",
+  "episode": 1,
+  "layer": "rain-heavy",
+  "prompt": "Steady gentle rain on a city street at night, distant urban hum, wet pavement reflections, no thunder, no music, continuous ambient loop",
+  "duration": 22
+}
+```
+
+A crowd bed for the studio interior:
+```json
+{
+  "action": "generate_ambient",
+  "project": "the-audacity",
+  "episode": 1,
+  "layer": "crowd",
+  "prompt": "Late-night talk-show studio audience: low murmurs, occasional polite laughter, ambient room tone, no music, no clear speech",
+  "duration": 30
+}
+```
+
 ---
 
 ## assemble
 
 ### `assemble.assemble`
-Final mix. All flags default to `true` --- pass `false` to skip a layer.
+Final mix. All flags default to `true` --- pass `false` to skip a layer. The assembler now runs a final-pass LUFS normalisation (-16 LUFS / -1 dBTP) and trims SFX clips to ≤2s with a 0.3s fade by default. Per-episode overrides go in `script.audioMix`.
 ```json
 {
   "action": "assemble",
@@ -297,6 +327,15 @@ One-shot: videos -> music -> assemble. Only use after script approval and (ideal
   "skipMusic": false
 }
 ```
+
+### `assemble.mix_audio`
+Script-aware per-shot audio mixer. Reads `script.json` to derive native-audio volume, ambient layer weights, and shot-boundary fades; produces `episode-NNN-final-nosubs.mp4` and (if `subtitles.srt` is present) `episode-NNN-final.mp4`. Use this **instead of** `assemble.assemble` when an episode has ambient beds and benefits from per-shot mix automation. Requires `media.generate_videos` to have run already, and at least one `ambient-*.mp3` layer (otherwise it falls back to mostly-native audio).
+
+```json
+{ "action": "mix_audio", "project": "the-audacity", "episode": 1 }
+```
+
+The two assemblers overlap intentionally: `assemble.assemble` is the simple, deterministic path; `mix_audio` is the script-aware path that varies the mix per shot. Pick one per episode — they both write the same `episode-NNN-final.mp4`, so the last one wins.
 
 ### `assemble.edit_transcribe`
 Always run this before any cut. `--aligned-from` is for content with a ground-truth script (Venice TTS, scripted reads).
@@ -401,7 +440,7 @@ For DaVinci Resolve:
 ```json
 { "action": "models", "category": "video" }
 ```
-Categories: `video`, `image`, `edit`, `tts`, `music`, `sfx`, `all`.
+Categories: `video`, `image`, `edit`, `tts`, `music`, `sfx`, `all`. The list reflects whatever's compiled into the harness's `src/venice/models.ts`. In v2.1.x that includes Wan 2.7 (lip-sync via `audio_url`), Kling O3 4K, HappyHorse 1.0, and the GPT Image 2 family.
 
 ### `inspect.voices`
 ```json

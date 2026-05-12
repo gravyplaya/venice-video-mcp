@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AssembleInput, EpisodeInput, SeriesInput } from '../src/schemas.js';
+import { AssembleInput, EpisodeInput, MediaInput, SeriesInput } from '../src/schemas.js';
 
 test('SeriesInput applies defaults for new action', () => {
   const parsed = SeriesInput.parse({
@@ -36,6 +36,40 @@ test('SeriesInput rejects explore_aesthetic count out of range', () => {
   });
 
   assert.equal(result.success, false);
+});
+
+test('MediaInput.generate_ambient applies default duration and enforces layer enum', () => {
+  const parsed = MediaInput.parse({
+    action: 'generate_ambient',
+    project: 'the-audacity',
+    episode: 1,
+    layer: 'rain-heavy',
+    prompt: 'Steady gentle rain on a city street at night, no thunder, continuous loop.',
+  });
+  if (parsed.action !== 'generate_ambient') throw new Error('expected generate_ambient');
+  assert.equal(parsed.layer, 'rain-heavy');
+  assert.equal(parsed.duration, 22);
+
+  const bad = MediaInput.safeParse({
+    action: 'generate_ambient',
+    project: 'the-audacity',
+    episode: 1,
+    layer: 'thunderstorm',
+    prompt: 'storm sounds',
+  });
+  assert.equal(bad.success, false);
+});
+
+test('AssembleInput accepts mix_audio with project + episode', () => {
+  const parsed = AssembleInput.parse({
+    action: 'mix_audio',
+    project: 'the-audacity',
+    episode: '3',
+  });
+  assert.equal(parsed.action, 'mix_audio');
+  if (parsed.action === 'mix_audio') {
+    assert.equal(parsed.episode, 3);
+  }
 });
 
 test('AssembleInput coerces edit_timeline numeric inputs', () => {

@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 import 'dotenv/config';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -9,6 +12,12 @@ import {
   MediaInput,
   AssembleInput,
   InspectInput,
+  SeriesShape,
+  CharacterShape,
+  EpisodeShape,
+  MediaShape,
+  AssembleShape,
+  InspectShape,
 } from './schemas.js';
 import { handleSeries } from './tools/series.js';
 import { handleCharacter } from './tools/character.js';
@@ -37,7 +46,7 @@ const initialInstructions = cachedInstructions
   : BASE_INSTRUCTIONS;
 
 const server = new McpServer(
-  { name: 'venice-video-mcp', version: '0.1.0' },
+  { name: 'venice-video-mcp', version: readPackageVersion() },
   {
     capabilities: {
       tools: {},
@@ -46,6 +55,25 @@ const server = new McpServer(
     instructions: initialInstructions,
   },
 );
+
+function readPackageVersion(): string {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      resolve(here, '..', 'package.json'),
+      resolve(here, '..', '..', 'package.json'),
+    ];
+    for (const candidate of candidates) {
+      if (!existsSync(candidate)) continue;
+      const pkg = JSON.parse(readFileSync(candidate, 'utf8'));
+      if (pkg && pkg.name === 'venice-video-mcp' && typeof pkg.version === 'string') {
+        return pkg.version;
+      }
+    }
+  } catch {
+  }
+  return '0.0.0';
+}
 
 const SKILL_HINT = 'See skill venice-mcp-pipeline for usage; venice-mcp-cookbook for examples.';
 
@@ -61,7 +89,7 @@ server.registerTool(
   'series',
   {
     description: `Manage Venice series state (create / list / set or explore aesthetic). ${SKILL_HINT}`,
-    inputSchema: SeriesInput,
+    inputSchema: SeriesShape,
   },
   async (args: any) => {
     const parsed = SeriesInput.safeParse(args);
@@ -74,7 +102,7 @@ server.registerTool(
   'character',
   {
     description: `Manage characters in a series (add / audition voices / lock voice). ${SKILL_HINT}`,
-    inputSchema: CharacterInput,
+    inputSchema: CharacterShape,
   },
   async (args: any) => {
     const parsed = CharacterInput.safeParse(args);
@@ -86,8 +114,8 @@ server.registerTool(
 server.registerTool(
   'episode',
   {
-    description: `Episode workflow: new / workshop script / approve / storyboard / qa / qa_approve / fix_panel. ${SKILL_HINT}`,
-    inputSchema: EpisodeInput,
+    description: `Episode workflow: new / workshop / approve / storyboard / qa / qa_approve / fix_panel / insert_shot. ${SKILL_HINT}`,
+    inputSchema: EpisodeShape,
   },
   async (args: any) => {
     const parsed = EpisodeInput.safeParse(args);
@@ -99,8 +127,8 @@ server.registerTool(
 server.registerTool(
   'media',
   {
-    description: `Generate or override media (videos / dialogue / sfx / music) and validate outputs. Long-running; supports progress. ${SKILL_HINT}`,
-    inputSchema: MediaInput,
+    description: `Generate or override media: videos / dialogue / sfx / music / ambient beds, plus validate. Long-running; supports progress. ${SKILL_HINT}`,
+    inputSchema: MediaShape,
   },
   async (args: any, extra: any) => {
     const parsed = MediaInput.safeParse(args);
@@ -112,8 +140,8 @@ server.registerTool(
 server.registerTool(
   'assemble',
   {
-    description: `Final assembly and editing: assemble / produce / edit_transcribe / edit_render / edit_timeline. Long-running; supports progress. ${SKILL_HINT}`,
-    inputSchema: AssembleInput,
+    description: `Final assembly and editing: assemble / produce / mix_audio / edit_transcribe / edit_render / edit_timeline / export_timeline. Long-running; supports progress. ${SKILL_HINT}`,
+    inputSchema: AssembleShape,
   },
   async (args: any, extra: any) => {
     const parsed = AssembleInput.safeParse(args);
@@ -126,7 +154,7 @@ server.registerTool(
   'inspect',
   {
     description: `Read-only state inspection (list / series / episode / shot / models / voices). Cheap, no spawn. ${SKILL_HINT}`,
-    inputSchema: InspectInput,
+    inputSchema: InspectShape,
   },
   async (args: any) => {
     const parsed = InspectInput.safeParse(args);

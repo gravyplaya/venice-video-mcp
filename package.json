@@ -1,7 +1,7 @@
 {
   "name": "venice-video-mcp",
-  "version": "0.2.1",
-  "description": "Token-lean MCP server that wraps the Venice Video Harness CLI. 6 verb tools + companion skills for consistency-first AI video creation.",
+  "version": "0.3.0",
+  "description": "Token-lean MCP server that wraps the Venice Video Harness CLI (v2.1.x). 6 verb tools + companion skills for consistency-first AI video creation.",
   "type": "module",
   "main": "dist/server.js",
   "bin": {

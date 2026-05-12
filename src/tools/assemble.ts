@@ -1,7 +1,4 @@
-import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { runHarness, harnessRoot, buildHarnessEnv } from '../harness.js';
+import { runHarness, runHarnessScript } from '../harness.js';
 import { resolveProjectPath, resolveWorkspacePath } from '../config.js';
 import { fromHarness, err, type ToolContent } from '../responses.js';
 import type { AssembleInputT } from '../schemas.js';
@@ -55,7 +52,8 @@ export async function handleAssemble(input: AssembleInputT, ctx: ProgressCtx = {
         if (input.label) args.push('--label', input.label);
 
         const emitter = makeProgressEmitter(ctx);
-        const r = await runHarnessScript('scripts/transcribe-sources.ts', args, emitter.onLine, {
+        const r = await runHarnessScript('scripts/transcribe-sources.ts', args, {
+          onProgress: emitter.onLine,
           signal: ctx.signal,
           timeoutMs: 20 * 60 * 1000,
         });
@@ -71,13 +69,31 @@ export async function handleAssemble(input: AssembleInputT, ctx: ProgressCtx = {
         if (input.dryRun) args.push('--dry-run');
 
         const emitter = makeProgressEmitter(ctx);
-        const r = await runHarnessScript('scripts/render-overlay.ts', args, emitter.onLine, {
+        const r = await runHarnessScript('scripts/render-overlay.ts', args, {
+          onProgress: emitter.onLine,
           signal: ctx.signal,
           timeoutMs: 20 * 60 * 1000,
         });
         if (!r) return err('cannot locate harness root; set HARNESS_PATH or HARNESS_BIN');
         return fromHarness(r, `rendered overlay from manifest`, {
           paths: { manifest: resolveCwd(input.manifest) },
+        });
+      }
+      case 'mix_audio': {
+        const project = resolveProjectPath(input.project);
+        const episodeDir = `${project}/episodes/episode-${pad(input.episode)}`;
+        const emitter = makeProgressEmitter(ctx);
+        const r = await runHarnessScript('scripts/mix-episode-audio.ts', [episodeDir], {
+          onProgress: emitter.onLine,
+          signal: ctx.signal,
+          timeoutMs: 45 * 60 * 1000,
+        });
+        if (!r) return err('cannot locate harness root; set HARNESS_PATH or HARNESS_BIN');
+        return fromHarness(r, `mixed audio + reassembled episode ${input.episode}`, {
+          paths: {
+            finalVideo: `${episodeDir}/episode-${pad(input.episode)}-final.mp4`,
+            preSubtitleVideo: `${episodeDir}/episode-${pad(input.episode)}-final-nosubs.mp4`,
+          },
         });
       }
       case 'export_timeline': {
@@ -115,7 +131,7 @@ export async function handleAssemble(input: AssembleInputT, ctx: ProgressCtx = {
         ];
         if (input.wordsJson) args.push('--words', resolveCwd(input.wordsJson));
 
-        const r = await runHarnessScript('scripts/timeline-view.ts', args, undefined, {
+        const r = await runHarnessScript('scripts/timeline-view.ts', args, {
           signal: ctx.signal,
           timeoutMs: 10 * 60 * 1000,
         });
@@ -133,102 +149,6 @@ export async function handleAssemble(input: AssembleInputT, ctx: ProgressCtx = {
     const message = cause instanceof Error ? cause.message : String(cause);
     return err(`assemble command rejected: ${message}`);
   }
-}
-
-async function runHarnessScript(
-  rel: string,
-  args: string[],
-  onProgress?: (line: string, stream: 'stdout' | 'stderr') => void,
-  opts: { signal?: AbortSignal; timeoutMs?: number } = {},
-) {
-  const root = harnessRoot();
-  if (!root) return null;
-  const scriptPath = join(root, rel);
-  if (!existsSync(scriptPath)) return null;
-
-  const tsxBin = resolveTsx(root);
-  if (!tsxBin) return null;
-
-  const start = Date.now();
-  const env = buildHarnessEnv();
-
-  return new Promise<{
-    ok: boolean;
-    code: number | null;
-    signal: NodeJS.Signals | null;
-    stdout: string;
-    stderr: string;
-    command: string;
-    durationMs: number;
-  }>((resolvePromise, reject) => {
-    const child = spawn(tsxBin, [scriptPath, ...args], {
-      cwd: root,
-      env,
-      shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const MAX_CAPTURE_CHARS = 200_000;
-    let stdoutText = '';
-    let stderrText = '';
-    let stdoutBuf = '';
-    let stderrBuf = '';
-    let timedOut = false;
-    const appendBounded = (existing: string, chunk: string): string => {
-      if (chunk.length >= MAX_CAPTURE_CHARS) return chunk.slice(-MAX_CAPTURE_CHARS);
-      const combined = existing + chunk;
-      if (combined.length <= MAX_CAPTURE_CHARS) return combined;
-      return combined.slice(combined.length - MAX_CAPTURE_CHARS);
-    };
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      stdoutText = appendBounded(stdoutText, chunk);
-      stdoutBuf += chunk;
-      const lines = stdoutBuf.split('\n');
-      stdoutBuf = lines.pop() ?? '';
-      if (onProgress) for (const l of lines) onProgress(l, 'stdout');
-    });
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk: string) => {
-      stderrText = appendBounded(stderrText, chunk);
-      stderrBuf += chunk;
-      const lines = stderrBuf.split('\n');
-      stderrBuf = lines.pop() ?? '';
-      if (onProgress) for (const l of lines) onProgress(l, 'stderr');
-    });
-    let timeoutHandle: NodeJS.Timeout | null = null;
-    if (opts.timeoutMs && opts.timeoutMs > 0) {
-      timeoutHandle = setTimeout(() => {
-        timedOut = true;
-        child.kill('SIGTERM');
-        setTimeout(() => child.kill('SIGKILL'), 5000).unref();
-      }, opts.timeoutMs);
-    }
-    if (opts.signal) {
-      if (opts.signal.aborted) child.kill('SIGTERM');
-      opts.signal.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
-    }
-    child.on('error', reject);
-    child.on('close', (code, sig) => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-      if (onProgress && stdoutBuf) onProgress(stdoutBuf, 'stdout');
-      if (onProgress && stderrBuf) onProgress(stderrBuf, 'stderr');
-      resolvePromise({
-        ok: code === 0 && !timedOut,
-        code,
-        signal: sig,
-        stdout: stdoutText,
-        stderr: stderrText,
-        command: `${tsxBin} ${scriptPath} ${args.join(' ')}`,
-        durationMs: Date.now() - start,
-      });
-    });
-  });
-}
-
-function resolveTsx(harnessDir: string): string | null {
-  const local = join(harnessDir, 'node_modules', '.bin', 'tsx');
-  if (existsSync(local)) return local;
-  return null;
 }
 
 function resolveCwd(p: string): string {

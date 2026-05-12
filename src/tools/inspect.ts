@@ -52,14 +52,26 @@ export async function handleInspect(input: InspectInputT): Promise<ToolContent> 
           approved: boolean;
           qaApproved: boolean;
           finalVideo: string | null;
+          timelineExports: string[];
           shotCount: number | null;
+          musicCueCount: number | null;
+          audioMix: boolean;
+          status: string | null;
+          ambientLayers: string[];
+          hasMusic: boolean;
         } = {
           dir: epDir,
           scriptVersions: [],
           approved: false,
           qaApproved: false,
           finalVideo: null,
+          timelineExports: [],
           shotCount: null,
+          musicCueCount: null,
+          audioMix: false,
+          status: null,
+          ambientLayers: [],
+          hasMusic: false,
         };
         const files = await readdir(epDir);
         for (const f of files) {
@@ -67,12 +79,31 @@ export async function handleInspect(input: InspectInputT): Promise<ToolContent> 
           if (f === 'script-approved.json') result.approved = true;
           if (f === 'qa-approved.json') result.qaApproved = true;
           if (/^episode-\d+-final\.mp4$/.test(f)) result.finalVideo = join(epDir, f);
+          if (/^episode-\d+(?:\.premiere\.xml|\.resolve\.fcpxml|\.fcpxml)$/.test(f)) {
+            result.timelineExports.push(f);
+          }
+        }
+        const audioDir = join(epDir, 'audio');
+        if (existsSync(audioDir)) {
+          try {
+            const audioFiles = await readdir(audioDir);
+            for (const f of audioFiles) {
+              const ambient = f.match(/^ambient-(.+)\.mp3$/);
+              if (ambient) result.ambientLayers.push(ambient[1]);
+              if (f === 'music.mp3') result.hasMusic = true;
+            }
+            result.ambientLayers.sort();
+          } catch {
+          }
         }
         const scriptPath = join(epDir, 'script.json');
         if (existsSync(scriptPath)) {
           try {
             const script = JSON.parse(await readFile(scriptPath, 'utf8'));
             if (Array.isArray(script.shots)) result.shotCount = script.shots.length;
+            if (Array.isArray(script.musicCues)) result.musicCueCount = script.musicCues.length;
+            if (script.audioMix && typeof script.audioMix === 'object') result.audioMix = true;
+            if (typeof script.status === 'string') result.status = script.status;
           } catch {
           }
         }
@@ -179,6 +210,7 @@ function summarizeSeries(data: any) {
     genre: data.genre,
     setting: data.setting,
     aestheticStyle: data.aesthetic?.style,
+    storyboardAspectRatio: data.storyboardAspectRatio ?? null,
     characters: Array.isArray(data.characters)
       ? data.characters.map((c: any) => ({
           name: c.name,
@@ -190,7 +222,19 @@ function summarizeSeries(data: any) {
     episodes: Array.isArray(data.episodes)
       ? data.episodes.map((e: any) => ({ number: e.number, title: e.title, status: e.status }))
       : [],
-    videoDefaults: data.videoDefaults,
+    videoDefaults: summarizeVideoDefaults(data.videoDefaults),
+  };
+}
+
+function summarizeVideoDefaults(vd: any) {
+  if (!vd || typeof vd !== 'object') return vd ?? null;
+  return {
+    actionModel: vd.actionModel ?? null,
+    atmosphereModel: vd.atmosphereModel ?? null,
+    characterConsistencyModel: vd.characterConsistencyModel ?? null,
+    lipSyncModel: vd.lipSyncModel ?? null,
+    seedanceCompatibility: vd.seedanceCompatibility ?? null,
+    imageDefaults: vd.imageDefaults ?? null,
   };
 }
 

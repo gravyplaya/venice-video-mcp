@@ -79,6 +79,29 @@ Multi-edit interprets reference images literally. A mostly-white/transparent log
 The harness defaults to Seedance 2.0 for video, which has a provenance gate: face-bearing input images must be produced by `seedream-v5-lite` / `seedream-v5-lite-edit`. Object/establishing/atmosphere images can come from any family.
 **What to watch for:** If `media.generate_videos` 4xx's with a Seedance error, check `inspect.shot` --- you'll see a `provenance.json` sidecar identifying the wrong-family image. Either re-generate that panel with seedream, or override `videoDefaults` in `series.json` to a non-Seedance family (Kling O3 + Veo).
 
+The compatibility behaviour is controlled by `videoDefaults.seedanceCompatibility`:
+- `prompt` (default in TTY) — list offending files and wait for `fallback` or `launder`.
+- `fallback` (default in CI / non-TTY) — reroute that shot to `kling-o3-standard-reference-to-video` (R2V) or `veo3.1-fast-image-to-video` (i2v); other shots in the run stay on Seedance.
+- `launder` — re-render incompatible images through `seedream-v5-lite-edit` with a "preserve image" prompt, archive the originals, then continue with Seedance.
+
+`inspect.series` now surfaces this value; check it before retrying a Seedance failure.
+
+### A12. Scene-level multi-shot can group consecutive shots into one unit
+v2.1.x default: the planner groups adjacent shots that share characters + location into a single Seedance multi-shot generation. Stdout reads `unit X of Y (covers shots A-B)`, not `shot N of M`. Consequences:
+- A single unit failure costs you the whole unit, not one shot. Retries re-render the unit.
+- Mid-unit `episode.fix_panel` is fine --- it edits the panel, not the unit boundary. Re-run `media.generate_videos` after.
+- Mid-unit `episode.insert_shot` splits the unit because the inserted shot has a new id (`5b`). That's intentional --- it preserves identity continuity across the inserted shot without re-rendering the rest.
+
+To disable scene-level grouping for a specific shot, set `mustStaySingle: true` in `script.json` for that shot.
+
+### A13. Motion-classified routing changes model per shot
+A dialogue shot with `motion: 'low' | 'medium'` and `faceVisible: true` routes to `wan-2-7-image-to-video` for lip-sync. High-motion or face-occluded shots stay on the R2V model. Implications:
+- The model used in stdout will not always match `series.videoDefaults.actionModel`.
+- Wan 2.7 needs an `audioUrl` ≥ 3s --- the harness pads short clips automatically but a missing `audioUrl` falls back to R2V silently.
+- To force a specific shot back to the default model, set `motion: 'high'` or `faceVisible: false` in `script.json`.
+
+Override the lip-sync model globally via `videoDefaults.lipSyncModel` in `series.json`.
+
 ## Editing-pipeline anti-patterns
 
 ### A14. Never frame-dump before transcribing
@@ -101,6 +124,32 @@ The EDL render produces `final-edit.mp4`. Overlays (lower-thirds, title cards, c
 
 ### A18. Always archive prior renders before re-rendering
 **Rule:** Never overwrite `<stem>.<ext>` --- rename existing to `<stem>-v<N>.<ext>` first. The harness's `render-overlay.ts` does this by default; the workspace's `shot-asset-safety` rule requires it for shot files. **`skipArchive: true` should never be passed** unless the user explicitly says "discard the prior render."
+
+## Audio / mix anti-patterns (v2.1.x)
+
+### A19. Music cues conflict with single-bed `media.generate_music`
+When `script.json` has a `musicCues[]` array, the assembler renders each cue and crossfades between adjacent cues. If you ALSO ran `media.generate_music`, the cues win --- the single bed at `audio/music.mp3` is ignored. **Rule:** check for `musicCueCount > 0` via `inspect.episode` before calling `media.generate_music`. If cues exist, skip `generate_music` unless the user wants a uniform bed.
+
+### A20. Per-shot `musicHold` overrides the cue envelope
+Each shot can carry `musicHold: 'sustain' | 'swell' | 'drop' | 'stinger'`. This is LAYERED on top of the containing cue's `musicHold`. If a shot is unexpectedly silent under the music bed, look for `musicHold: 'drop'` --- it ducks the bed to -inf for the shot's range. Likewise `'stinger'` injects a 0.4s pulse +6dB and returns to bed; if you hear an unexpected hit, check the shot's automation.
+
+### A21. LUFS final pass changes the perceived loudness
+v2.1.x default targets -16 LUFS integrated / -1 dBTP true peak. If a user complains the final mix is quieter than the source media, that's the LUFS pass. Override via `script.audioMix.lufsTarget` (e.g. `-14` for streaming-loud) and `script.audioMix.truePeakDb`. Don't disable it project-wide; it's the loudness standard the harness assumes downstream tools (subtitles, transcoder) rely on.
+
+### A22. SFX clips are trimmed to 2s with a 0.3s fade by default
+Long SFX from `elevenlabs-sound-effects-v2` (which can return 5-10s clips) are auto-trimmed to ≤2.0s with a 0.3s fade-out. If you need a longer SFX cue, override per-episode via `script.audioMix.sfxMaxDurationSec` and `sfxFadeOutSec`.
+
+### A23. Wan 2.7 audio_url has a 3s minimum
+Wan 2.7 returns HTTP 400 if `audio_url` is shorter than 3 seconds. The harness pads automatically (look for `padded audio_url N.NNs -> 3.00s` in stdout). If you see a Wan 2.7 4xx and no padding line, the input audio may be missing or unreadable --- check that `audioUrl` resolves and decodes via `ffprobe`.
+
+### A24. Ambient layer names are NOT free-form
+Only four ambient slot names are recognised downstream: `rain-heavy`, `rain`, `crowd`, `quiet-night`. The MCP `media.generate_ambient` action enforces the enum on input. If you bypass it (write your own file directly) and use a different filename, `assemble.assemble` and `assemble.mix_audio` will silently ignore it. To add a custom slot, you'd need to fork the harness's `assembler.ts` / `mix-episode-audio.ts` --- usually it's easier to coerce the audio into one of the four named slots.
+
+### A25. `assemble.mix_audio` overwrites `assemble.assemble`'s output
+Both actions write `episode-NNN-final.mp4` (and `mix_audio` also writes `episode-NNN-final-nosubs.mp4`). Last writer wins. Decide per-episode which mixer to use; running both in sequence just throws away the first mix. Use `inspect.episode` to see which file is current --- the `final-nosubs.mp4` presence indicates `mix_audio` ran last.
+
+### A26. `mix_audio` falls back to mostly-native audio when no ambient layers exist
+If no `ambient-*.mp3` files are present in `<episodeDir>/audio/`, the per-shot mixer still runs but its ambient track is silent. The output isn't broken --- it just sounds like the basic assembler. Run `media.generate_ambient` first (one or more layers) to get the actual benefit of `mix_audio` over `assemble.assemble`.
 
 ## Tool-specific failure modes
 
@@ -131,6 +180,15 @@ The EDL render produces `final-edit.mp4`. Overlays (lower-thirds, title cards, c
 ### `assemble.edit_transcribe` finds 0 sources
 **Cause:** `dir` doesn't exist or `include` glob doesn't match.
 **Fix:** Default include is `*.mp4,*.mov,*.m4a,*.wav,*.mp3,*.mkv,*.webm`. Verify with `ls` (or just `inspect.list` adjacent to the dir).
+
+### `assemble.export_timeline` succeeds but the NLE shows no clips
+**Cause:** No `shot-NNN.mp4` files exist in `<episodeDir>/scene-001/`. The XML still imports but has nothing to lay on the timeline.
+**Fix:** Run `media.generate_videos` first. The export reads from the rendered shot files, not from `script.json`.
+
+### Venice returns a "silent rejection" (200 OK with no output file)
+**Symptom:** A tool exits 0 but the expected output file is missing or zero bytes.
+**Cause:** Venice intermittently returns a successful HTTP response with no actual generation. v2.1.x catches most of these via the rejection guard, but it can still leak past with a structured retry message.
+**Fix:** Check the stderr tail for `silent rejection detected, retry N/3`. If you see `silent rejection persisted after 3 retries`, re-queue the call --- the upstream model is degraded.
 
 ## When to escalate
 

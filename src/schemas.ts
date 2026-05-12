@@ -205,11 +205,25 @@ export const MediaValidate = z.object({
   videoOutputs: z.boolean().default(false).describe('Run validate-video-outputs instead of validate-episode'),
 }).strict();
 
+export const AMBIENT_LAYERS = ['rain-heavy', 'rain', 'crowd', 'quiet-night'] as const;
+
+export const MediaGenerateAmbient = z.object({
+  action: z.literal('generate_ambient'),
+  project: Project,
+  episode: Episode,
+  layer: z.enum(AMBIENT_LAYERS).describe(
+    'Which ambient slot to fill. Drives the output filename ambient-<layer>.mp3 and matches the four layers the harness assembler recognises.',
+  ),
+  prompt: z.string().min(1).describe('Sound-effect prompt describing the ambient bed (e.g. "Steady gentle rain on a city street at night, no thunder, no music, continuous ambient loop")'),
+  duration: coercePositiveInt({ min: 3, max: 120 }).default(22).describe('Seconds, default 22'),
+}).strict();
+
 export const MediaInput = z.discriminatedUnion('action', [
   MediaGenerateVideos,
   MediaOverrideAudio,
   MediaGenerateMusic,
   MediaValidate,
+  MediaGenerateAmbient,
 ]);
 
 export const AssembleAssemble = z.object({
@@ -276,6 +290,12 @@ export const AssembleExportTimeline = z.object({
   height: coercePositiveInt({ max: 8192 }).default(1080),
 }).strict();
 
+export const AssembleMixAudio = z.object({
+  action: z.literal('mix_audio'),
+  project: Project,
+  episode: Episode,
+}).strict();
+
 export const AssembleInput = z.discriminatedUnion('action', [
   AssembleAssemble,
   AssembleProduce,
@@ -283,6 +303,7 @@ export const AssembleInput = z.discriminatedUnion('action', [
   AssembleEditRender,
   AssembleEditTimeline,
   AssembleExportTimeline,
+  AssembleMixAudio,
 ]);
 
 export const InspectInput = z.discriminatedUnion('action', [
@@ -386,21 +407,22 @@ export const EpisodeShape = z.object({
 }).shape;
 
 export const MediaShape = z.object({
-  action: z.enum(['generate_videos', 'override_audio', 'generate_music', 'validate'])
-    .describe('Action: generate_videos (long-running), override_audio (Venice TTS or SFX), generate_music, validate'),
+  action: z.enum(['generate_videos', 'override_audio', 'generate_music', 'validate', 'generate_ambient'])
+    .describe('Action: generate_videos (long-running), override_audio (Venice TTS or SFX), generate_music, validate, generate_ambient (Venice SFX → ambient-<layer>.mp3 in episode audio dir)'),
   project: Project.describe('series slug or path'),
   episode: Episode.describe('episode number'),
   skipQa: z.boolean().optional().describe('(generate_videos) skip QA approval check'),
   dialogue: z.boolean().optional().describe('(override_audio) override dialogue with Venice TTS'),
   sfx: z.boolean().optional().describe('(override_audio) generate SFX overrides'),
-  prompt: z.string().optional().describe('(generate_music) music style/mood'),
-  duration: z.string().optional().describe('(generate_music) seconds, default 60'),
+  prompt: z.string().optional().describe('(generate_music, generate_ambient) prompt for the model'),
+  duration: z.union([z.string(), z.coerce.number()]).optional().describe('(generate_music) seconds (string ok), default 60; (generate_ambient) seconds, default 22'),
   videoOutputs: z.boolean().optional().describe('(validate) run validate-video-outputs instead of validate-episode'),
+  layer: z.enum(AMBIENT_LAYERS).optional().describe('(generate_ambient) ambient slot: rain-heavy | rain | crowd | quiet-night'),
 }).shape;
 
 export const AssembleShape = z.object({
-  action: z.enum(['assemble', 'produce', 'edit_transcribe', 'edit_render', 'edit_timeline', 'export_timeline'])
-    .describe('Action: assemble (mix audio + burn subs), produce (full pipeline), edit_transcribe, edit_render (overlays), edit_timeline (filmstrip+waveform PNG), export_timeline (XML for FCPX/Premiere/DaVinci)'),
+  action: z.enum(['assemble', 'produce', 'edit_transcribe', 'edit_render', 'edit_timeline', 'export_timeline', 'mix_audio'])
+    .describe('Action: assemble (mix audio + burn subs), produce (full pipeline), edit_transcribe, edit_render (overlays), edit_timeline (filmstrip+waveform PNG), export_timeline (XML for FCPX/Premiere/DaVinci), mix_audio (script-aware per-shot ambient mix; overrides assemble for episodes with ambient beds)'),
   project: Project.optional().describe('(assemble, produce, export_timeline) series slug or path'),
   episode: Episode.optional().describe('(assemble, produce, export_timeline) episode number'),
   format: z.enum(['fcpxml', 'premiere', 'davinci']).optional().describe('(export_timeline) editor format, default fcpxml'),

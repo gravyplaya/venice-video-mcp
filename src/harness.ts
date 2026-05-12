@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { getHarnessConfig, getHarnessRoot, getVeniceApiKey } from './config.js';
 
 export interface HarnessRunOptions {
@@ -166,4 +168,107 @@ export function buildHarnessEnv(extraEnv: Record<string, string> = {}): Record<s
   const apiKey = getVeniceApiKey();
   if (apiKey && !out.VENICE_API_KEY) out.VENICE_API_KEY = apiKey;
   return out;
+}
+
+/**
+ * Run an arbitrary `scripts/*.ts` file inside the harness repo through the
+ * harness's own local `tsx`. Used by tools that need to invoke utility
+ * scripts that aren't part of the main mini-drama CLI (transcription,
+ * overlay render, timeline view, ambient-bed gen, scripted audio mix).
+ *
+ * Returns `null` when the harness root or tsx binary can't be located, so
+ * callers can surface a "set HARNESS_PATH" error instead of crashing.
+ */
+export async function runHarnessScript(
+  rel: string,
+  args: string[],
+  opts: HarnessRunOptions = {},
+): Promise<HarnessResult | null> {
+  const root = harnessRoot();
+  if (!root) return null;
+  const scriptPath = join(root, rel);
+  if (!existsSync(scriptPath)) return null;
+
+  const tsxBin = resolveTsx(root);
+  if (!tsxBin) return null;
+
+  const start = Date.now();
+  const env = buildHarnessEnv(opts.env ?? {});
+
+  return new Promise<HarnessResult>((resolvePromise, reject) => {
+    const child = spawn(tsxBin, [scriptPath, ...args], {
+      cwd: opts.cwd ?? root,
+      env,
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const MAX_CAPTURE_CHARS = 200_000;
+    let stdoutText = '';
+    let stderrText = '';
+    let stdoutBuf = '';
+    let stderrBuf = '';
+    let timedOut = false;
+    const appendBounded = (existing: string, chunk: string): string => {
+      if (chunk.length >= MAX_CAPTURE_CHARS) return chunk.slice(-MAX_CAPTURE_CHARS);
+      const combined = existing + chunk;
+      if (combined.length <= MAX_CAPTURE_CHARS) return combined;
+      return combined.slice(combined.length - MAX_CAPTURE_CHARS);
+    };
+
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdoutText = appendBounded(stdoutText, chunk);
+      stdoutBuf += chunk;
+      const lines = stdoutBuf.split('\n');
+      stdoutBuf = lines.pop() ?? '';
+      if (opts.onProgress) for (const l of lines) opts.onProgress(l, 'stdout');
+    });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => {
+      stderrText = appendBounded(stderrText, chunk);
+      stderrBuf += chunk;
+      const lines = stderrBuf.split('\n');
+      stderrBuf = lines.pop() ?? '';
+      if (opts.onProgress) for (const l of lines) opts.onProgress(l, 'stderr');
+    });
+
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    if (opts.timeoutMs && opts.timeoutMs > 0) {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGTERM');
+        setTimeout(() => child.kill('SIGKILL'), 5000).unref();
+      }, opts.timeoutMs);
+    }
+    if (opts.signal) {
+      if (opts.signal.aborted) child.kill('SIGTERM');
+      opts.signal.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
+    }
+
+    child.on('error', (cause) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      reject(cause);
+    });
+    child.on('close', (code, sig) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (opts.onProgress && stdoutBuf) opts.onProgress(stdoutBuf, 'stdout');
+      if (opts.onProgress && stderrBuf) opts.onProgress(stderrBuf, 'stderr');
+      resolvePromise({
+        ok: code === 0 && !timedOut,
+        code,
+        signal: sig,
+        stdout: stdoutText,
+        stderr: stderrText,
+        command: `${tsxBin} ${scriptPath} ${args.join(' ')}`,
+        durationMs: Date.now() - start,
+      });
+    });
+  });
+}
+
+function resolveTsx(harnessDir: string): string | null {
+  const local = join(harnessDir, 'node_modules', '.bin', 'tsx');
+  if (existsSync(local)) return local;
+  return null;
 }
