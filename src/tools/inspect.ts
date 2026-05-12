@@ -235,6 +235,8 @@ function summarizeVideoDefaults(vd: any) {
     lipSyncModel: vd.lipSyncModel ?? null,
     seedanceCompatibility: vd.seedanceCompatibility ?? null,
     imageDefaults: vd.imageDefaults ?? null,
+    seedanceKeyframeForWan:
+      typeof vd.seedanceKeyframeForWan === 'boolean' ? vd.seedanceKeyframeForWan : null,
   };
 }
 

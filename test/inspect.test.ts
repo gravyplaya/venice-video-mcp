@@ -44,6 +44,7 @@ test('inspect list and series return expected metadata', async () => {
           characterConsistencyModel: 'seedance-2-0-reference-to-video',
           lipSyncModel: 'wan-2-7-image-to-video',
           seedanceCompatibility: 'prompt',
+          seedanceKeyframeForWan: true,
           imageDefaults: {
             generationModel: 'seedream-v5-lite',
             editModel: 'seedream-v5-lite-edit',
@@ -73,6 +74,7 @@ test('inspect list and series return expected metadata', async () => {
           actionModel: string | null;
           lipSyncModel: string | null;
           seedanceCompatibility: string | null;
+          seedanceKeyframeForWan: boolean | null;
           imageDefaults: { generationModel: string; editModel: string } | null;
         };
       };
@@ -83,6 +85,7 @@ test('inspect list and series return expected metadata', async () => {
     assert.equal(seriesBody.data.storyboardAspectRatio, '16:9');
     assert.equal(seriesBody.data.videoDefaults.lipSyncModel, 'wan-2-7-image-to-video');
     assert.equal(seriesBody.data.videoDefaults.seedanceCompatibility, 'prompt');
+    assert.equal(seriesBody.data.videoDefaults.seedanceKeyframeForWan, true);
     assert.equal(seriesBody.data.videoDefaults.imageDefaults?.editModel, 'seedream-v5-lite-edit');
   });
 });
