@@ -3,7 +3,12 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { handleInspect } from '../src/tools/inspect.js';
+import {
+  extractModelIds,
+  extractVoiceIds,
+  handleInspect,
+  matchCategory,
+} from '../src/tools/inspect.js';
 
 async function withWorkspace(testFn: (workspace: string) => Promise<void>): Promise<void> {
   const workspace = await mkdtemp(join(tmpdir(), 'venice-video-mcp-test-'));
@@ -97,4 +102,74 @@ test('inspect episode and shot summarize generated files', async () => {
     assert.equal(shotBody.ok, true);
     assert.deepEqual(shotBody.data.files, ['shot-001-panel.png']);
   });
+});
+
+test('extractModelIds covers id-prefixed entries and bare-string arrays', () => {
+  const fixture = `
+    export const VIDEO_MODELS = [
+      { id: 'happyhorse-1-0-text-to-video', name: 'HappyHorse 1.0' },
+      { id: 'kling-o3-4k-image-to-video', name: 'Kling O3 4K' },
+    ];
+    export const IMAGE_GENERATION_MODELS = [
+      { id: 'lustify-v7', name: 'Lustify V7' },
+      { id: 'bria-bg-remover', name: 'Bria BG Remover' },
+    ];
+    export const MULTI_EDIT_MODELS = [
+      'gpt-image-2-edit',
+      'nano-banana-pro-edit',
+      'seedream-v5-lite-edit',
+    ] as const;
+    export const TTS_MODELS = ['tts-kokoro', 'tts-qwen3-1-7b'] as const;
+  `;
+
+  const ids = extractModelIds(fixture);
+  for (const expected of [
+    'happyhorse-1-0-text-to-video',
+    'kling-o3-4k-image-to-video',
+    'lustify-v7',
+    'bria-bg-remover',
+    'gpt-image-2-edit',
+    'nano-banana-pro-edit',
+    'seedream-v5-lite-edit',
+    'tts-kokoro',
+    'tts-qwen3-1-7b',
+  ]) {
+    assert.ok(ids.includes(expected), `expected ${expected} in ids`);
+  }
+});
+
+test('matchCategory routes new image families and edit/tts arrays correctly', () => {
+  assert.equal(matchCategory('happyhorse-1-0-text-to-video', 'video'), true);
+  assert.equal(matchCategory('lustify-v7', 'image'), true);
+  assert.equal(matchCategory('bria-bg-remover', 'image'), true);
+  assert.equal(matchCategory('wai-Illustrious', 'image'), true);
+  assert.equal(matchCategory('seedream-v5-lite-edit', 'edit'), true);
+  assert.equal(matchCategory('seedream-v5-lite-edit', 'image'), false);
+  assert.equal(matchCategory('tts-kokoro', 'tts'), true);
+  assert.equal(matchCategory('elevenlabs-music', 'music'), true);
+  assert.equal(matchCategory('mmaudio-v2-text-to-audio', 'sfx'), true);
+});
+
+test('extractVoiceIds picks up Kokoro buildVoiceGroup arrays and Qwen3 entries', () => {
+  const fixture = `
+    function buildKokoroVoices() {
+      return [
+        ...buildVoiceGroup('tts-kokoro', 'American English', 'female', [
+          'af_alloy', 'af_bella',
+        ]),
+        ...buildVoiceGroup('tts-kokoro', 'British English', 'male', ['bm_daniel']),
+      ];
+    }
+    function buildQwen3Voices() {
+      return [
+        { voice_id: 'Vivian', name: 'Vivian', category: 'tts-qwen3-1-7b',
+          labels: { gender: 'female', age: 'adult', language: 'English' } },
+      ];
+    }
+  `;
+
+  const ids = extractVoiceIds(fixture);
+  for (const expected of ['af_alloy', 'af_bella', 'bm_daniel', 'Vivian']) {
+    assert.ok(ids.includes(expected), `expected ${expected} in voice ids`);
+  }
 });

@@ -194,16 +194,36 @@ function summarizeSeries(data: any) {
   };
 }
 
-function extractModelIds(src: string): string[] {
+export function extractModelIds(src: string): string[] {
   const ids = new Set<string>();
-  const idRe = /['"`]([a-z0-9._-]+)['"`]/g;
+  // Object-form entries: `{ id: '...', name: ..., type: ... }` used by
+  // VIDEO_MODELS / IMAGE_GENERATION_MODELS / MUSIC_MODELS in the harness.
   for (const m of src.matchAll(/id:\s*['"`]([^'"`]+)['"`]/g)) ids.add(m[1]);
+  // Bare-string array entries used by `MULTI_EDIT_MODELS` and `TTS_MODELS`.
+  // The harness keeps these as `as const` string tuples, so they don't have
+  // an `id:` prefix and would otherwise be invisible to inspect.models.
+  for (const block of extractNamedArrayBlocks(src, ['MULTI_EDIT_MODELS', 'TTS_MODELS'])) {
+    for (const m of block.matchAll(/['"`]([a-z0-9._-]+)['"`]/g)) ids.add(m[1]);
+  }
   return Array.from(ids).sort();
 }
 
-function matchCategory(id: string, cat: string): boolean {
-  if (cat === 'video') return /(video|kling|veo|sora|wan|ltx|seedance|grok-imagine|pixverse|longcat|hunyuan-video)/i.test(id);
-  if (cat === 'image') return /(image|nano-banana|flux|seedream|recraft|qwen-image|chroma|hidream|gpt-image|grok-imagine)/i.test(id) && !/edit/.test(id);
+function extractNamedArrayBlocks(src: string, names: string[]): string[] {
+  const blocks: string[] = [];
+  for (const name of names) {
+    const re = new RegExp(`${name}\\s*=\\s*\\[([\\s\\S]*?)\\]`);
+    const m = src.match(re);
+    if (m) blocks.push(m[1]);
+  }
+  return blocks;
+}
+
+export function matchCategory(id: string, cat: string): boolean {
+  if (cat === 'video') return /(video|kling|veo|sora|wan|ltx|seedance|grok-imagine|pixverse|longcat|hunyuan-video|happyhorse|ovi-)/i.test(id);
+  if (cat === 'image') {
+    if (/edit/.test(id)) return false;
+    return /(image|nano-banana|flux|seedream|recraft|qwen-image|chroma|hidream|gpt-image|grok-imagine|lustify|wai-|bria-|imagineart|z-image)/i.test(id);
+  }
   if (cat === 'edit') return /-edit$/.test(id) || /\bedit\b/.test(id);
   if (cat === 'tts') return /^tts-|^elevenlabs-tts-/.test(id);
   if (cat === 'music') return /(music|ace-step|stable-audio|minimax-music)/i.test(id);
@@ -211,9 +231,18 @@ function matchCategory(id: string, cat: string): boolean {
   return false;
 }
 
-function extractVoiceIds(src: string): string[] {
+export function extractVoiceIds(src: string): string[] {
   const ids = new Set<string>();
+  // Object-form entries (Qwen3 voices use `voice_id: '...'` — the regex
+  // matches the trailing `id:` substring inside `voice_id:`).
   for (const m of src.matchAll(/id:\s*['"`]([^'"`]+)['"`]/g)) ids.add(m[1]);
+  // Kokoro voices are emitted as bare-string arrays fed to
+  // `buildVoiceGroup(...)`. Pull the last array literal of each call so we
+  // surface every Kokoro id (af_alloy, am_adam, ...) without picking up
+  // unrelated quoted strings elsewhere in the file.
+  for (const m of src.matchAll(/buildVoiceGroup\([^)]*?\[([^\]]+)\]\s*\)/g)) {
+    for (const id of m[1].matchAll(/['"`]([a-z][a-z0-9_]+)['"`]/g)) ids.add(id[1]);
+  }
   return Array.from(ids).sort();
 }
 
