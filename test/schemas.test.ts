@@ -118,6 +118,35 @@ test('AssembleInput accepts mix_audio with project + episode', () => {
   }
 });
 
+test('EpisodeInput insert_shot defaults duration to 15s (max native on Seedance 2.0 / HappyHorse 1.0)', () => {
+  const parsed = EpisodeInput.parse({
+    action: 'insert_shot',
+    project: 'the-audacity',
+    episode: 1,
+    after: '5',
+    description: 'Wide reaction shot of the studio audience.',
+  });
+  if (parsed.action !== 'insert_shot') throw new Error('expected insert_shot');
+  assert.equal(parsed.duration, '15s');
+  assert.equal(parsed.shotType, 'action');
+  assert.equal(parsed.motion, 'medium');
+  assert.equal(parsed.transition, 'CUT');
+});
+
+test('AssembleInput assemble defaults to native dialogue (dialogueReplace=false, nativeVolume=1.0)', () => {
+  const parsed = AssembleInput.parse({
+    action: 'assemble',
+    project: 'the-audacity',
+    episode: 1,
+  });
+  if (parsed.action !== 'assemble') throw new Error('expected assemble');
+  assert.equal(parsed.dialogueReplace, false, 'native dialogue is the default now');
+  assert.equal(parsed.nativeVolume, 1.0, 'native volume full when not replacing');
+  assert.equal(parsed.subtitles, true);
+  assert.equal(parsed.music, true);
+  assert.equal(parsed.ambient, true);
+});
+
 test('AssembleInput coerces edit_timeline numeric inputs', () => {
   const parsed = AssembleInput.parse({
     action: 'edit_timeline',

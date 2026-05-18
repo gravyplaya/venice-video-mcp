@@ -59,6 +59,7 @@ Always include style + palette + lighting. lens and film have sensible defaults 
 ## character
 
 ### `character.add` (human)
+`voiceDesc` is the primary lever for dialogue quality now that the recommended pipeline uses **native model dialogue** instead of Venice TTS. Spec it like you're directing a voice actor — timbre, accent, pacing, emotional default state, idiolect, breath placement, signature delivery quirks. The richer the description, the more in-character the video model's generated dialogue will be when it's referenced in shot prompts. (The Venice voice you later `character.lock` is only used by Venice TTS — i.e. when `media.override_audio { dialogue: true }` is invoked as a rescue, not on the default path.)
 ```json
 {
   "action": "add",
@@ -68,7 +69,7 @@ Always include style + palette + lighting. lens and film have sensible defaults 
   "age": "late 30s",
   "description": "Strikingly beautiful Black woman with high cheekbones, perfectly arched eyebrows, warm brown skin, sleek shoulder-length black hair, full lips, fierce dark brown eyes, statuesque presence",
   "wardrobe": "Tailored designer power suit in deep burgundy with gold statement earrings, killer heels, lapel microphone clipped to her collar",
-  "voiceDesc": "Rich warm contralto with honeyed diction that drips sarcasm. Smooth and commanding. Perfect comedic timing with deliberate pauses before punchlines.",
+  "voiceDesc": "Rich warm contralto, mid-low register with a velvety chest resonance. Honeyed Mid-Atlantic diction layered over a faint Louisiana drawl on vowels. Deliberate pacing — she takes one full beat before every punchline, then drops the joke at half-volume so you have to lean in. Sarcasm sits underneath warmth, never on top of it; she sounds amused, never bitter. Breath is unhurried, slightly audible before key phrases. Laughs are dry chuckles, never giggles. No vocal fry. No uptalk.",
   "skipImages": false
 }
 ```
@@ -126,12 +127,19 @@ Generates 5 candidate voices. Sample text defaults to a generic line; pass one t
 
 ### `episode.workshop`
 LLM-drafts the shot-by-shot script via Venice chat completions. Stop and let the user review/edit the output before approving.
+
+**Always include shot-duration and voice guidance in the `concept`.** The script LLM defaults to many short shots and to letting the video model add music/SFX — both are wrong for the current pipeline:
+
+- Tell it to **prefer 15s shots** (the native max on Seedance 2.0 and HappyHorse 1.0). For a 30-second beat, 2x15s beats 5x6s.
+- Tell it to **include detailed voice direction per dialogue shot** (timbre, accent, pacing, emotional register, breath placement) so the video model generates good native dialogue.
+- Tell it to **add a no-music / no-SFX negative** to every shot prompt — the harness adds music and ambient in post.
+
 ```json
 {
   "action": "workshop",
   "project": "the-audacity",
   "episode": 1,
-  "concept": "Vivienne demolishes the modern hustle-culture gospel after Chad pitches her his crypto-coaching empire.",
+  "concept": "Vivienne demolishes the modern hustle-culture gospel after Chad pitches her his crypto-coaching empire. Target ~60 seconds total: 4 shots at 15s each. Per-shot voice direction must be precise (Vivienne: warm contralto, deliberate pacing, dry sarcasm; Chad: nasal tenor, breathless overconfidence). Every shot's video prompt must include the negative `no background music, no sound effects, no soundtrack, dry recording` — the harness adds music and ambient in post.",
   "model": "llama-3.3-70b"
 }
 ```
@@ -190,22 +198,23 @@ Multi-edit a single panel to correct drift. Pass `characters` if only specific c
 ### `episode.insert_shot`
 Add a new shot to an approved script after a specific shot id. The harness assigns a suffix-letter id (`5b`, `5c`, ...) so existing shot numbers stay stable for already-rendered panels and clips. After inserting, re-run `episode.storyboard` and `media.generate_videos` to materialize the new shot only — existing shots are not regenerated.
 
+**Default duration is `15s`** (the native max on Seedance 2.0 and HappyHorse 1.0). **Omit `duration` to take the default** — prefer one long shot to two short ones. Only specify a smaller value for deliberate short beats (hard cut, sight gag, reaction stinger).
+
 ```json
 {
   "action": "insert_shot",
   "project": "the-audacity",
   "episode": 1,
   "after": "5",
-  "description": "Wide reaction shot: studio audience erupts in laughter; Vivienne smirks while Chad's confidence visibly cracks.",
+  "description": "Wide reaction shot: studio audience erupts in laughter; Vivienne smirks while Chad's confidence visibly cracks. Long single take so the laughter lands and reverberates. No music, no sound effects, no soundtrack — dry recording, room tone only.",
   "shotType": "action",
-  "duration": "4s",
   "motion": "high",
   "characters": "VIVIENNE,CHAD",
   "transition": "CUT"
 }
 ```
 
-With dialogue (speaker is required when dialogue is set):
+With dialogue (speaker is required when dialogue is set). Include detailed delivery direction in the `description` so the video model's native dialogue track has direction to follow:
 
 ```json
 {
@@ -213,14 +222,30 @@ With dialogue (speaker is required when dialogue is set):
   "project": "the-audacity",
   "episode": 1,
   "after": "5b",
-  "description": "Vivienne leans into the camera, deadpan close-up.",
+  "description": "Vivienne leans into the camera, deadpan close-up. Slow, deliberate pacing; warm contralto with honeyed sarcasm; long beat before the punchline. No music, no sound effects, no soundtrack — dry recording, room tone only.",
   "shotType": "close-up",
-  "duration": "3s",
   "motion": "low",
   "characters": "VIVIENNE",
   "dialogue": "Bless your heart, Chad.",
   "speaker": "VIVIENNE",
   "transition": "FADE"
+}
+```
+
+Deliberate short beat (override the 15s default only when the shot is *meant* to be quick):
+
+```json
+{
+  "action": "insert_shot",
+  "project": "the-audacity",
+  "episode": 1,
+  "after": "5c",
+  "description": "Hard cut to a single frame of Chad's frozen, mortified expression. No music, no sound effects.",
+  "shotType": "close-up",
+  "duration": "3s",
+  "motion": "low",
+  "characters": "CHAD",
+  "transition": "CUT"
 }
 ```
 
@@ -240,16 +265,20 @@ Long-running. Set a `progressToken` in `_meta` to receive shot-by-shot updates. 
 ```
 
 ### `media.override_audio`
-Replace the model-native audio with Venice TTS dialogue and/or generated SFX.
+Replace the model-native audio with Venice TTS dialogue and/or generated SFX. **This is now an exception path, not a default.** The recommended pipeline keeps the video model's native dialogue (Seedance / Wan 2.7 / HappyHorse all generate in-character audio when the panel prompt is detailed enough). Only call `override_audio { dialogue: true }` when the user explicitly wants Venice TTS — for example to swap accents, switch to a non-English voice, or repair a shot where the model botched a specific line. If you do call it, also flip `assemble.assemble { dialogueReplace: true, nativeVolume: 0.2 }` so the TTS sits on top of a ducked native track.
+
+Reasonable use case (single-shot Venice TTS rescue):
 ```json
 {
   "action": "override_audio",
   "project": "the-audacity",
   "episode": 1,
   "dialogue": true,
-  "sfx": true
+  "sfx": false
 }
 ```
+
+The `sfx: true` flag is independent and stays useful — it generates short SFX cues per shot from `script.json` SFX entries.
 
 ### `media.generate_music`
 Generates a single background bed. If `script.json` defines a `musicCues[]` array (per-act cues with crossfade + `musicHold` automation), prefer authoring those cues directly --- the assembler will render and crossfade them during `assemble.assemble` / `produce`. The single-bed `generate_music` path is still useful for episodes that want one uniform mood.
@@ -301,7 +330,13 @@ A crowd bed for the studio interior:
 ## assemble
 
 ### `assemble.assemble`
-Final mix. All flags default to `true` --- pass `false` to skip a layer. The assembler now runs a final-pass LUFS normalisation (-16 LUFS / -1 dBTP) and trims SFX clips to ≤2s with a 0.3s fade by default. Per-episode overrides go in `script.audioMix`.
+Final mix. Layer flags (`subtitles`, `music`, `ambient`) default to `true` — pass `false` to skip a layer. The assembler runs a final-pass LUFS normalisation (-16 LUFS / -1 dBTP) and trims SFX clips to ≤2s with a 0.3s fade by default. Per-episode overrides go in `script.audioMix`.
+
+**Dialogue defaults changed (current behavior):**
+- `dialogueReplace` defaults to **`false`** — the video model's native dialogue plays as-is. This is the right default until Venice ships better TTS voices.
+- `nativeVolume` defaults to **`1.0`** (full volume), matching the no-replacement path.
+- Only flip `dialogueReplace: true` (and drop `nativeVolume` to ~0.2) when the user explicitly wants Venice TTS dialogue on top of a ducked native track.
+
 ```json
 {
   "action": "assemble",
@@ -311,6 +346,17 @@ Final mix. All flags default to `true` --- pass `false` to skip a layer. The ass
   "music": true,
   "ambient": true,
   "ambientVolume": 0.3,
+  "dialogueReplace": false,
+  "nativeVolume": 1.0
+}
+```
+
+If you've called `media.override_audio { dialogue: true }` upstream and want the TTS to win the mix:
+```json
+{
+  "action": "assemble",
+  "project": "the-audacity",
+  "episode": 1,
   "dialogueReplace": true,
   "nativeVolume": 0.2
 }
@@ -456,9 +502,27 @@ Providers: `kokoro`, `qwen3`, `all`.
 
 ---
 
-## Failure response shape
+## Response shape — successes can carry warnings too
 
-When a tool call fails, the structuredContent looks like:
+The MCP scans harness stdout/stderr for known warning patterns (silent-rejection retries, duration auto-snaps, Wan keyframe fallbacks, deprecation notices, rate-limits, etc.) and surfaces them in **both** success and failure responses. A successful run with warnings looks like:
+
+```json
+{
+  "ok": true,
+  "message": "ran QA on episode 1 (with 2 warnings — see warnings[])",
+  "command": "venice-video qa-storyboard -p ... -e 1 --model ...",
+  "warnings": [
+    "silent rejection detected, retry 1/3",
+    "x-venice-model-deprecation-warning: model X retires 2026-09-01"
+  ],
+  "stderrTail": "...up to 15 lines of stderr...",
+  "durationMs": 8742
+}
+```
+
+**When `warnings[]` is non-empty, treat `ok: true` with caution.** Read the warnings before reporting success to the user. Common patterns and what to do about them are in `venice-mcp-troubleshooting` (Production anti-patterns A1–A27 and the failure-mode list).
+
+A failed call looks like:
 ```json
 {
   "ok": false,
@@ -466,8 +530,9 @@ When a tool call fails, the structuredContent looks like:
   "command": "venice-video storyboard-episode -p ... -e 1 ...",
   "code": 1,
   "stdoutTail": "...last 30 lines of stdout...",
-  "stderrTail": "...last 30 lines of stderr..."
+  "stderrTail": "...last 30 lines of stderr...",
+  "warnings": ["...detected warning lines, if any..."]
 }
 ```
 
-Read `stderrTail` first --- the harness writes structured errors there.
+Read `stderrTail` first --- the harness writes structured errors there. `warnings[]` is the quick-skim view of what the harness already flagged in-band.

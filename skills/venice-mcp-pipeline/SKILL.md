@@ -32,6 +32,47 @@ Several behaviours the MCP relied on the agent to orchestrate are now automatic 
 - **Wan 2.7 audio pre-flight.** When a shot's `audioUrl` is shorter than 3 seconds, the harness pads it to 3s automatically (Wan 2.7 returns 400 otherwise). You'll see a "padded audio_url N.NNs -> 3.00s" line in stdout.
 - **Silent-rejection guard.** Every Venice response is checked for the "no output produced" pattern that occasionally slips past a 200 OK. The harness retries up to 3 times and surfaces a structured error instead of returning a zero-byte file.
 
+## Shot duration strategy — prefer 15s, stitch fewer long clips
+
+**Default to 15-second shots.** Seedance 2.0 and HappyHorse 1.0 both accept any integer 3–15s natively, and 15s is the maximum. Wan 2.7 also generates at long durations. For a 30-second beat, **2x15s beats 5x6s**, and it's not even close:
+
+- **Identity stays locked longer.** Each new shot is a fresh R2V/i2v generation; the more transitions, the more places character likeness can drift.
+- **Cost is lower.** Per-shot Venice billing is a fixed setup plus a per-second component; fewer shots = lower total.
+- **Motion has room to breathe.** Many of the "AI video looks twitchy" tells come from cutting before a gesture/expression has time to complete.
+- **Fewer panel renders.** Every shot needs a storyboard panel; halving shot count halves the storyboard cost too.
+- **Fewer transitions to hand-edit.** A 5-shot version has 4 cut points to police for continuity; a 2-shot version has 1.
+
+Only drop below 15s for **deliberate** short beats: a hard cut, a 1-second sight gag, a reaction stinger. Default everything else to 15s.
+
+When you call `episode.workshop`, include this guidance in the `concept` (the harness's script LLM defaults to short shots otherwise). When you call `episode.insert_shot`, **omit `duration` to take the new 15s default** rather than passing a smaller value out of habit.
+
+You can verify after the fact via `inspect.episode` (returns `shotCount`) and by reading `script.json` — if a 30s episode has 5+ shots, the workshop produced too many beats.
+
+## Voice strategy — native dialogue, post-production music & SFX
+
+Venice's TTS voices (Kokoro, Qwen3) are usable but limited in range and emotion. Until Venice ships better voice options, the recommended pipeline is:
+
+1. **Let the video gen model speak the dialogue.** Seedance 2.0, Wan 2.7, and HappyHorse 1.0 all generate in-character audio when the panel prompt includes a detailed voice/delivery description. Quality is highly prompt-dependent; spec it precisely (timbre, accent, pacing, emotional register, idiolect, breath placement).
+2. **Suppress the model from adding music or SFX.** Include negatives like "no background music, no sound effects, no soundtrack, dry recording" in every dialogue shot's prompt. The harness adds music (`musicCues[]` or `media.generate_music`) and ambient/SFX (`media.generate_ambient`, `assemble.mix_audio`) in post.
+3. **Keep `dialogueReplace: false` on `assemble.assemble`.** This is the new default. The native dialogue track plays at full volume (`nativeVolume: 1.0`), with music and ambient mixed underneath.
+4. **Use `media.override_audio { dialogue: true }` only as a deliberate corrective** — accent control, language swap, or when the model botched a specific take. Default to NOT replacing dialogue.
+
+What this means for `character.add`: the `voiceDesc` field is now the primary lever for dialogue quality. Spec it like you're directing a voice actor — see the cookbook's `character.add` example. The Venice voice you `character.lock` is the fallback for Venice TTS only; it doesn't affect the native model dialogue.
+
+What this means for `episode.workshop`: instruct the script LLM to include per-shot voice direction in dialogue beats (delivery, subtext, energy) AND to add the no-music/no-SFX negative to every shot prompt.
+
+## Reading harness output — warnings surface even on success
+
+The MCP's `fromHarness` wrapper now extracts known warning patterns from harness stdout/stderr and surfaces them in the response — even when the harness exited 0. When a tool returns `ok: true` but `warnings: [...]` is non-empty, **read the warnings before assuming the output is clean**. Common ones:
+
+- `silent rejection detected, retry N/3` — Venice returned 200 OK with no actual output; the harness retried. If you see the final retry succeed, the output is real; if you see `silent rejection persisted after 3 retries`, the upstream model is degraded.
+- `duration auto-snapped` — the requested shot duration wasn't in the model's allowed set and was rounded. With the new 15s default this should stop happening, but if it does, the script has a stale duration.
+- `padded audio_url N.NNs -> 3.00s` — Wan 2.7 audio pre-flight padded a sub-3s dialogue clip.
+- `falling back to panel-anchored single-pass render` — Wan 2.7 keyframe pipeline (rule A27) failed and fell back. Identity may drift on that shot; consider `disableSeedanceKeyframe: false` + retry, or accept the drift.
+- `deprecation` / `x-venice-model-deprecation-warning` — Venice flagged a deprecated model; migrate before the sunset date.
+
+A successful run with warnings reads like: `"<original message> (with N warnings — see warnings[])"`. The response also includes a short `stderrTail` so you have context.
+
 ## Mental model
 
 The MCP shells out to the Venice Video Harness CLI. State lives on the local filesystem under the workspace's `output/<series-slug>/` directory. You're orchestrating a multi-stage creative pipeline:
