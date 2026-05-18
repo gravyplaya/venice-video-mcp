@@ -6,8 +6,11 @@ import test from 'node:test';
 import {
   extractModelIds,
   extractVoiceIds,
+  filterLiveModels,
   handleInspect,
   matchCategory,
+  parseLiveModels,
+  type LiveModel,
 } from '../src/tools/inspect.js';
 
 async function withWorkspace(testFn: (workspace: string) => Promise<void>): Promise<void> {
@@ -255,6 +258,101 @@ test('extractVoiceIds picks up Kokoro buildVoiceGroup arrays and Qwen3 entries',
   for (const expected of ['af_alloy', 'af_bella', 'bm_daniel', 'Vivian']) {
     assert.ok(ids.includes(expected), `expected ${expected} in voice ids`);
   }
+});
+
+test('parseLiveModels extracts ids, traits, vision capability, deprecation, and pricing', () => {
+  const payload = {
+    data: [
+      {
+        id: 'qwen3-6-27b',
+        model_spec: {
+          name: 'Qwen 3.6 27B',
+          traits: [],
+          capabilities: { supportsVision: true },
+          pricing: { input: { usd: 0.325 }, output: { usd: 3.25 } },
+        },
+        type: 'text',
+      },
+      {
+        id: 'qwen3-vl-235b-a22b',
+        model_spec: {
+          name: 'Qwen3 VL 235B',
+          traits: ['default_vision'],
+          capabilities: { supportsVision: true },
+          pricing: { input: { usd: 0.25 }, output: { usd: 1.5 } },
+        },
+        type: 'text',
+      },
+      {
+        id: 'zai-org-glm-4.7',
+        model_spec: {
+          name: 'GLM 4.7',
+          traits: ['default', 'most_intelligent'],
+          capabilities: { supportsVision: false },
+          pricing: { input: { usd: 0.55 }, output: { usd: 2.65 } },
+        },
+        type: 'text',
+      },
+      {
+        id: 'qwen-2.5-vl',
+        model_spec: {
+          name: 'Qwen 2.5 VL',
+          traits: [],
+          capabilities: { supportsVision: true },
+          deprecation: { date: '2025-09-22T00:00:00.000Z' },
+          pricing: { input: { usd: 0.4 }, output: { usd: 1.2 } },
+        },
+        type: 'text',
+      },
+      'not-a-model',
+      { id: 12345 },
+      { id: 'no-spec' },
+    ],
+  };
+
+  const parsed = parseLiveModels(payload);
+  assert.equal(parsed.length, 5);
+
+  const qwenVl = parsed.find((m) => m.id === 'qwen3-vl-235b-a22b');
+  assert.ok(qwenVl);
+  assert.equal(qwenVl?.supportsVision, true);
+  assert.deepEqual(qwenVl?.traits, ['default_vision']);
+  assert.equal(qwenVl?.deprecationDate, null);
+  assert.equal(qwenVl?.pricing.inputUsd, 0.25);
+
+  const deprecated = parsed.find((m) => m.id === 'qwen-2.5-vl');
+  assert.ok(deprecated);
+  assert.equal(deprecated?.deprecationDate, '2025-09-22T00:00:00.000Z');
+
+  const visionOnly = filterLiveModels(parsed, 'vision');
+  assert.deepEqual(
+    visionOnly.map((m) => m.id).sort(),
+    ['qwen-2.5-vl', 'qwen3-6-27b', 'qwen3-vl-235b-a22b'],
+  );
+
+  const allCategory = filterLiveModels(parsed, 'all');
+  assert.equal(allCategory.length, 5);
+
+  const noMatch: LiveModel[] = [];
+  assert.equal(filterLiveModels(noMatch, 'vision').length, 0);
+});
+
+test('parseLiveModels tolerates non-object payloads and missing data array', () => {
+  assert.deepEqual(parseLiveModels(null), []);
+  assert.deepEqual(parseLiveModels({}), []);
+  assert.deepEqual(parseLiveModels({ data: null }), []);
+  assert.deepEqual(parseLiveModels({ data: 'oops' }), []);
+});
+
+test('inspect.models with category=vision but live=false returns guidance error', async () => {
+  const result = await handleInspect({
+    action: 'models',
+    category: 'vision',
+    live: false,
+  });
+  const body = result.structuredContent as { ok: boolean; message: string };
+  assert.equal(body.ok, false);
+  assert.match(body.message, /vision.*live: true/i);
 });
 
 test('inspect voices filters ids by requested provider', async () => {

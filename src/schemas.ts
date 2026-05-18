@@ -128,7 +128,7 @@ export const EpisodeQa = z.object({
   action: z.literal('qa'),
   project: Project,
   episode: Episode,
-  model: z.string().default('qwen-2.5-vl'),
+  model: z.string().default('qwen3-6-27b'),
   shots: z.string().optional(),
 }).strict();
 
@@ -324,7 +324,8 @@ export const InspectInput = z.discriminatedUnion('action', [
   }).strict(),
   z.object({
     action: z.literal('models'),
-    category: z.enum(['video', 'image', 'edit', 'tts', 'music', 'sfx', 'all']).default('all'),
+    category: z.enum(['video', 'image', 'edit', 'tts', 'music', 'sfx', 'vision', 'all']).default('all'),
+    live: z.boolean().default(false).describe('Fetch the live Venice /api/v1/models registry instead of scraping the harness\'s local src/venice/models.ts. Required for `vision` category. Surfaces traits (default_vision, etc.) and any pending deprecation.date so callers can migrate before a model 404s.'),
   }).strict(),
   z.object({
     action: z.literal('voices'),
@@ -384,7 +385,7 @@ export const EpisodeShape = z.object({
   episode: Episode.optional().describe('episode number (required for all actions except new where it is auto-assigned)'),
   title: z.string().optional().describe('(new) episode title'),
   concept: z.string().optional().describe('(workshop) episode concept'),
-  model: z.string().optional().describe('(workshop) chat model, default llama-3.3-70b; (qa) vision model, default qwen-2.5-vl'),
+  model: z.string().optional().describe('(workshop) chat model, default llama-3.3-70b; (qa) vision model, default qwen3-6-27b. Use `inspect.models { category: "vision", live: true }` to see current vision options and any pending Venice deprecations.'),
   notes: z.string().optional().describe('(approve, qa_approve) approval notes'),
   refine: z.boolean().optional().describe('(storyboard) run multi-edit refinement, default true'),
   editModel: z.string().optional().describe('(storyboard, fix_panel) edit model, default seedream-v5-lite-edit'),
@@ -465,6 +466,7 @@ export const InspectShape = z.object({
   project: Project.optional().describe('(series, episode, shot)'),
   episode: Episode.optional().describe('(episode, shot)'),
   shot: Shot.optional().describe('(shot)'),
-  category: z.enum(['video', 'image', 'edit', 'tts', 'music', 'sfx', 'all']).optional().describe('(models) filter category, default all'),
+  category: z.enum(['video', 'image', 'edit', 'tts', 'music', 'sfx', 'vision', 'all']).optional().describe('(models) filter category, default all. `vision` requires `live: true`.'),
+  live: z.boolean().optional().describe('(models) fetch Venice /api/v1/models live instead of scraping harness src/venice/models.ts. Required for `vision` category; surfaces traits and pending deprecations.'),
   provider: z.enum(['kokoro', 'qwen3', 'all']).optional().describe('(voices) filter provider, default all'),
 }).shape;

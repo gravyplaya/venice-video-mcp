@@ -158,13 +158,13 @@ Generates panels for every shot in the approved script. Refinement is on by defa
 ```
 
 ### `episode.qa`
-Vision-based QA against character references. Optional `shots` filter for re-checking specific shots.
+Vision-based QA against character references. Optional `shots` filter for re-checking specific shots. The default `model` is `qwen3-6-27b` (well-priced Qwen 3.6 27B vision model on Venice as of 2026-05). If Venice deprecates it, run `inspect.models { category: "vision", live: true }` to find the current recommended replacement.
 ```json
 {
   "action": "qa",
   "project": "the-audacity",
   "episode": 1,
-  "model": "qwen-2.5-vl",
+  "model": "qwen3-6-27b",
   "shots": "3-7"
 }
 ```
@@ -440,7 +440,13 @@ For DaVinci Resolve:
 ```json
 { "action": "models", "category": "video" }
 ```
-Categories: `video`, `image`, `edit`, `tts`, `music`, `sfx`, `all`. The list reflects whatever's compiled into the harness's `src/venice/models.ts`. In v2.1.x that includes Wan 2.7 (lip-sync via `audio_url`), Kling O3 4K, HappyHorse 1.0, and the GPT Image 2 family.
+Categories: `video`, `image`, `edit`, `tts`, `music`, `sfx`, `vision`, `all`. The default ("offline") list reflects whatever's compiled into the harness's `src/venice/models.ts`. In v2.1.x that includes Wan 2.7 (lip-sync via `audio_url`), Kling O3 4K, HappyHorse 1.0, and the GPT Image 2 family.
+
+Pass `"live": true` to fetch Venice's live `/api/v1/models` registry instead. The live mode is required for the `vision` category (vision-capable LLMs aren't in the harness's video-model file) and is the canonical way to see which model IDs are currently active, which carry the `default_vision` / `default_code` / `most_intelligent` traits, and which have a pending `deprecation.date`:
+```json
+{ "action": "models", "category": "vision", "live": true }
+```
+The response includes a `deprecated[]` list of any retiring models so you can migrate before they 404.
 
 ### `inspect.voices`
 ```json

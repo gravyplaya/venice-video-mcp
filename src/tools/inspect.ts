@@ -124,6 +124,14 @@ export async function handleInspect(input: InspectInputT): Promise<ToolContent> 
         });
       }
       case 'models': {
+        if (input.live || input.category === 'vision') {
+          if (!input.live && input.category === 'vision') {
+            return err(
+              '`vision` category requires `live: true` — vision-capable LLMs are not part of the harness video-model registry. Call inspect.models with { category: "vision", live: true }.',
+            );
+          }
+          return await fetchLiveModelRegistry(input.category);
+        }
         const harnessDir = getHarnessRoot();
         const summary: Record<string, string[]> = {};
         if (harnessDir) {
@@ -141,6 +149,7 @@ export async function handleInspect(input: InspectInputT): Promise<ToolContent> 
         return ok('model registry', {
           data: {
             source: harnessDir ? 'harness src/venice/models.ts' : 'unavailable (set HARNESS_PATH)',
+            hint: 'pass { live: true } to query Venice\'s /api/v1/models registry (required for category: "vision")',
             ...summary,
           },
         });
@@ -274,6 +283,9 @@ export function matchCategory(id: string, cat: string): boolean {
   if (cat === 'tts') return /^tts-|^elevenlabs-tts-/.test(id);
   if (cat === 'music') return /(music|ace-step|stable-audio|minimax-music)/i.test(id);
   if (cat === 'sfx') return /(sound-effects|mmaudio)/i.test(id);
+  // `vision` is only meaningful for the live registry (capabilities.supportsVision)
+  // since the harness's offline file doesn't carry capability flags. It always
+  // fails here so callers fall through to the live-mode path in handleInspect.
   return false;
 }
 
@@ -306,4 +318,123 @@ function extractKokoroVoiceIds(src: string): string[] {
 
 function pad(n: number): string {
   return n.toString().padStart(3, '0');
+}
+
+const VENICE_MODELS_URL = 'https://api.venice.ai/api/v1/models?type=text';
+const VENICE_FETCH_TIMEOUT_MS = 8000;
+
+export interface LiveModel {
+  id: string;
+  name?: string;
+  traits: string[];
+  supportsVision: boolean;
+  deprecationDate: string | null;
+  pricing: { inputUsd: number | null; outputUsd: number | null };
+}
+
+export interface LiveModelRegistry {
+  source: string;
+  fetchedAt: string;
+  count: number;
+  category: string;
+  models: LiveModel[];
+  deprecated: Array<{ id: string; replacement: string | null; date: string }>;
+  recommended: { defaultVision: string | null; mostIntelligent: string | null };
+}
+
+async function fetchLiveModelRegistry(category: string): Promise<ToolContent> {
+  let payload: unknown;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), VENICE_FETCH_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(VENICE_MODELS_URL, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) {
+      return err(`Venice /api/v1/models returned HTTP ${res.status}`, {
+        stderrTail: `GET ${VENICE_MODELS_URL} -> ${res.status} ${res.statusText}`,
+      });
+    }
+    payload = await res.json();
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return err(`failed to fetch Venice /api/v1/models: ${message}`, {
+      stderrTail: `GET ${VENICE_MODELS_URL}`,
+    });
+  }
+
+  const parsed = parseLiveModels(payload);
+  const filtered = filterLiveModels(parsed, category);
+  const registry: LiveModelRegistry = {
+    source: VENICE_MODELS_URL,
+    fetchedAt: new Date().toISOString(),
+    count: filtered.length,
+    category,
+    models: filtered,
+    deprecated: parsed
+      .filter((m) => m.deprecationDate)
+      .map((m) => ({ id: m.id, replacement: null, date: m.deprecationDate as string })),
+    recommended: {
+      defaultVision: parsed.find((m) => m.traits.includes('default_vision'))?.id ?? null,
+      mostIntelligent: parsed.find((m) => m.traits.includes('most_intelligent'))?.id ?? null,
+    },
+  };
+  const note = registry.deprecated.length
+    ? `live model registry (${registry.count} match, ${registry.deprecated.length} pending deprecation)`
+    : `live model registry (${registry.count} match)`;
+  return ok(note, { data: registry as unknown as Record<string, unknown> });
+}
+
+export function parseLiveModels(payload: unknown): LiveModel[] {
+  if (!payload || typeof payload !== 'object') return [];
+  const data = (payload as { data?: unknown }).data;
+  if (!Array.isArray(data)) return [];
+  const out: LiveModel[] = [];
+  for (const entry of data) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as {
+      id?: unknown;
+      model_spec?: {
+        name?: unknown;
+        traits?: unknown;
+        capabilities?: { supportsVision?: unknown };
+        deprecation?: { date?: unknown };
+        pricing?: { input?: { usd?: unknown }; output?: { usd?: unknown } };
+      };
+    };
+    if (typeof e.id !== 'string') continue;
+    const traits = Array.isArray(e.model_spec?.traits)
+      ? (e.model_spec!.traits as unknown[]).filter((t): t is string => typeof t === 'string')
+      : [];
+    const supportsVision = e.model_spec?.capabilities?.supportsVision === true;
+    const deprecationDate =
+      typeof e.model_spec?.deprecation?.date === 'string'
+        ? (e.model_spec!.deprecation!.date as string)
+        : null;
+    const pricing = e.model_spec?.pricing;
+    out.push({
+      id: e.id,
+      name: typeof e.model_spec?.name === 'string' ? (e.model_spec!.name as string) : undefined,
+      traits,
+      supportsVision,
+      deprecationDate,
+      pricing: {
+        inputUsd: typeof pricing?.input?.usd === 'number' ? (pricing.input.usd as number) : null,
+        outputUsd: typeof pricing?.output?.usd === 'number' ? (pricing.output.usd as number) : null,
+      },
+    });
+  }
+  return out;
+}
+
+export function filterLiveModels(models: LiveModel[], category: string): LiveModel[] {
+  if (category === 'all') return models;
+  if (category === 'vision') return models.filter((m) => m.supportsVision);
+  return models.filter((m) => matchCategory(m.id, category));
 }
