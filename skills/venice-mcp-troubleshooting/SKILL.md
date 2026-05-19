@@ -50,8 +50,11 @@ If you customize prompts via `episode.fix_panel { prompt }`:
 - Add `photorealistic, photograph, photo` to the negative prompt for stylized aesthetics.
 - Use `cfg_scale: 10` for character references and storyboard panels (lower values like 7 cause style drift between angles).
 
-### A3. Atmosphere model duration validation
-`veo3.1-fast-image-to-video` only accepts 4s/6s/8s. Seedance 2.0 (current default) accepts 4s/5s/8s/10s/12s/15s --- not all integers. The harness auto-snaps invalid durations to the nearest valid value with a warning. If you see "duration auto-snapped" in stdout, your script is using a duration the model doesn't support natively --- fix it in `script.json`.
+### A3. Shot duration — prefer 15s, native max on Seedance 2.0 and HappyHorse 1.0
+- Seedance 2.0 (all variants) accepts every integer 4s–15s natively. HappyHorse 1.0 accepts 3s–15s. `veo3.1-fast-image-to-video` only accepts 4s/6s/8s. Wan 2.7 also generates long shots for lip-sync.
+- **15s is the recommended default**, applied automatically by the MCP for `episode.insert_shot { duration }`. For a 30s beat, prefer 2x15s over 5x6s — identity stays anchored, costs are lower, motion has room to breathe. Drop below 15s only for deliberate short beats (hard cut, sight gag, reaction stinger).
+- If you bypass the MCP and call the harness CLI directly with a duration outside the model's allowed set, the harness will auto-snap to the nearest valid value and log `duration auto-snapped`. This now surfaces in the MCP response as a `warnings[]` entry — read it before assuming the output is what you asked for, and fix the offending duration in `script.json`.
+- `episode.workshop`'s default script LLM tends to produce too many short shots. The MCP description for `episode.workshop.concept` now tells the agent to instruct the LLM to target 15s shots; you should also include that in the concept string when calling workshop manually.
 
 ### A4. R2V always defaults to 9:16 if you don't pass an aspect ratio
 The harness pipeline now derives aspect ratio from `series.storyboardAspectRatio`. Never hardcode `9:16` unless you actually want vertical. After `media.generate_videos`, **always run `media.validate { videoOutputs: true }`** to verify all shots match the expected orientation.
@@ -191,6 +194,13 @@ For pre-2.2.0 harness installs, the manual two-stage workflow still works: see g
 **Cause:** You skipped `episode.approve` (or the user edited script.json after approval).
 **Fix:** Run `episode.approve { project, episode }`, then retry storyboard.
 
+### `episode.qa` returns 404 for every shot ("vision model … isn't available on Venice's chat endpoint" / "model ID is stale")
+**Cause:** The configured vision model has been deprecated and sunset by Venice. Historically this was `qwen-2.5-vl` (sunset 2025-09-22), and pre-fix MCP installs still hard-defaulted to it. Venice promises sunset routing to "a model of similar processing power" but vision LLMs in particular routinely 404 cleanly after the date.
+**Fix:**
+1. Pass an explicit current vision model on the call: `episode.qa { project, episode, model: "qwen3-6-27b" }` (well-priced Qwen 3.6 27B with vision support as of 2026-05). The MCP's current default is already `qwen3-6-27b`.
+2. To confirm what's actually live and what's deprecated, run `inspect.models { category: "vision", live: true }`. The response includes a `deprecated[]` array of any models with a pending `deprecation.date` and a `recommended.defaultVision` field (Venice's `default_vision` trait pointer, currently `qwen3-vl-235b-a22b` — capable but ~6x the input cost of `qwen3-6-27b`).
+3. If you're on an old MCP that still defaults to `qwen-2.5-vl`, update the MCP or always pass `model` explicitly.
+
 ### `episode.qa` flags every shot
 **Cause:** Aesthetic drift from cfg_scale too low, or character refs themselves are inconsistent.
 **Fix:** First, regenerate the character refs (see harness `add-character` --- it produces 4 angle images). Verify they're stylistically consistent. Then storyboard with `cfgScale: 10`.
@@ -201,7 +211,18 @@ For pre-2.2.0 harness installs, the manual two-stage workflow still works: see g
 
 ### `assemble.assemble` produces a final mp4 with no audio
 **Cause:** `dialogueReplace: true` but no Venice TTS dialogue was generated.
-**Fix:** Run `media.override_audio { dialogue: true }` BEFORE assembly, OR pass `dialogueReplace: false` and `nativeVolume: 1.0` to use the model-native audio.
+**Fix (now the default path):** Pass `dialogueReplace: false` and `nativeVolume: 1.0` to use the video model's native audio. As of 2026-05 the MCP defaults are exactly this — native dialogue from Seedance/Wan/HappyHorse, music and ambient added in post — because Venice's TTS voices are still limited in range. Only flip `dialogueReplace: true` (and also run `media.override_audio { dialogue: true }` upstream) when the user explicitly wants TTS for accent control, language swap, or to fix a botched native take.
+
+### Final mp4 has unwanted music or sound effects baked into the dialogue track
+**Cause:** Video model generated its own background music / SFX because the shot prompt didn't suppress them.
+**Fix:** Edit `script.json` shot prompts to include the negative `no background music, no sound effects, no soundtrack, dry recording`, then re-run `media.generate_videos` for the affected shots. The `episode.workshop` description now tells the script LLM to add this negative automatically; if you see baked-in music, the workshop concept was probably missing that guidance — re-workshop with it included.
+
+### Native dialogue sounds wrong (accent, emotion, pacing off)
+**Cause:** The video model's native dialogue is driven by the shot prompt's voice/delivery description. Sparse description → bland or off-character delivery.
+**Fix:**
+1. First, beef up `voiceDesc` on `character.add` (timbre, accent, pacing, emotional register, breath placement). The richer the description, the more in-character the native dialogue.
+2. In the shot's `description`/prompt, include per-shot delivery direction (e.g. "deliberate pacing, dry sarcasm, long beat before the punchline").
+3. If the model still can't hit the target, fall back to Venice TTS for that shot: `media.override_audio { dialogue: true }` for the episode + `assemble.assemble { dialogueReplace: true, nativeVolume: 0.2 }`. This costs more and sounds more synthetic but gives deterministic delivery.
 
 ### `assemble.edit_transcribe` finds 0 sources
 **Cause:** `dir` doesn't exist or `include` glob doesn't match.
