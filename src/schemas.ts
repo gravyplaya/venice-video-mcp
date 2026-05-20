@@ -235,7 +235,15 @@ export const AssembleAssemble = z.object({
   ambient: z.boolean().default(true),
   ambientVolume: coerceFiniteNumber({ min: 0, max: 1 }).default(0.3),
   dialogueReplace: z.boolean().default(false),
-  nativeVolume: coerceFiniteNumber({ min: 0, max: 1 }).default(1.0),
+  // nativeVolume default is intentionally undefined here; the harness CLI
+  // resolves the default itself: 0 when dialogueReplace is true (so Venice
+  // TTS doesn't fight a competing model-native narrator track), 1.0
+  // otherwise. Operators who want to keep a soft ambient bed under the TTS
+  // can pass `nativeVolume: 0.2` explicitly. Per-shot script.json
+  // shot.nativeAudio ('mute' | 'duck' | 'keep') overrides this. The
+  // tool handler enforces "dialogueReplace=true + nativeVolume>0.5"
+  // safety check (discriminated unions don't compose with superRefine).
+  nativeVolume: coerceFiniteNumber({ min: 0, max: 1 }).optional(),
 }).strict();
 
 export const AssembleProduce = z.object({
@@ -433,8 +441,8 @@ export const AssembleShape = z.object({
   music: z.boolean().optional().describe('(assemble) mix music, default true'),
   ambient: z.boolean().optional().describe('(assemble) mix ambient bed, default true'),
   ambientVolume: z.coerce.number().optional().describe('(assemble) ambient volume 0-1, default 0.3'),
-  dialogueReplace: z.boolean().optional().describe('(assemble) Venice dialogue replacement. DEFAULT IS NOW `false` — prefer the video model\'s native dialogue (Seedance / Wan 2.7 / HappyHorse generate in-character speech with the right voiceDesc prompt and a strong character ref). Set to `true` only when the user explicitly wants Venice TTS to replace the native dialogue (e.g. accent control, non-English voice). When `true`, also drop `nativeVolume` to ~0.2 so TTS sits on top.'),
-  nativeVolume: z.coerce.number().optional().describe('(assemble) native audio volume in the final mix, default 1.0 (full). Drop to ~0.2 only when `dialogueReplace: true` so the Venice TTS dialogue isn\'t fighting the model-native track.'),
+  dialogueReplace: z.boolean().optional().describe('(assemble) Venice dialogue replacement. DEFAULT IS `false` — prefer the video model\'s native dialogue (Seedance / Wan 2.7 / HappyHorse generate in-character speech with the right voiceDesc prompt and a strong character ref). Set to `true` only when the user explicitly wants Venice TTS to replace the native dialogue (e.g. accent control, non-English voice, NARRATOR voice-over). When `true`, `nativeVolume` automatically defaults to 0 so the model-native audio (which may include a competing generated narrator) is fully muted.'),
+  nativeVolume: z.coerce.number().optional().describe('(assemble) native audio volume in the final mix. Resolved server-side: when `dialogueReplace: true` the default is 0 (mute the model-native track entirely; Venice TTS owns the dialogue lane); otherwise 1.0. Pass `nativeVolume: 0.2` explicitly to keep a soft ambient bed under the TTS. Per-shot `shot.nativeAudio: \'mute\' | \'duck\' | \'keep\'` in `script.json` overrides this default on individual shots.'),
   withTts: z.boolean().optional().describe('(produce) add Venice TTS replacement'),
   skipMusic: z.boolean().optional().describe('(produce) skip background music'),
   dir: z.string().optional().describe('(edit_transcribe) source media directory'),

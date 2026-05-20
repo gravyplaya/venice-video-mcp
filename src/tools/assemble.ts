@@ -8,6 +8,22 @@ export async function handleAssemble(input: AssembleInputT, ctx: ProgressCtx = {
   try {
     switch (input.action) {
       case 'assemble': {
+        // Safety check: dialogueReplace=true + a high nativeVolume produces a
+        // double narration. The harness's safe default is 0; we reject only
+        // values above 0.5 (since 0.2 is the recommended ambient-bed value).
+        if (
+          input.dialogueReplace === true
+          && input.nativeVolume !== undefined
+          && input.nativeVolume > 0.5
+        ) {
+          return err(
+            `nativeVolume=${input.nativeVolume} with dialogueReplace=true will produce a double narration ` +
+            `(the model-native audio competes with Venice TTS). Use nativeVolume: 0 (the safe default), ` +
+            `or 0.2 to keep a soft ambient bed under the TTS, or set per-shot 'shot.nativeAudio: keep' ` +
+            `in script.json on the specific shots that need their model-native audio preserved.`,
+          );
+        }
+
         const project = resolveProjectPath(input.project);
         const args = ['assemble-episode', '-p', project, '-e', String(input.episode)];
         if (!input.subtitles) args.push('--no-subtitles');
@@ -15,7 +31,12 @@ export async function handleAssemble(input: AssembleInputT, ctx: ProgressCtx = {
         if (!input.ambient) args.push('--no-ambient');
         args.push('--ambient-volume', String(input.ambientVolume));
         if (!input.dialogueReplace) args.push('--no-dialogue-replace');
-        args.push('--native-volume', String(input.nativeVolume));
+        // Only forward --native-volume when the caller passed it explicitly.
+        // Letting it default in the harness (0 with --dialogue-replace, 1.0
+        // otherwise) is the safe choice and matches the schema description.
+        if (input.nativeVolume !== undefined) {
+          args.push('--native-volume', String(input.nativeVolume));
+        }
 
         const emitter = makeProgressEmitter(ctx);
         const r = await runHarness(args, { onProgress: emitter.onLine, signal: ctx.signal, timeoutMs: 30 * 60 * 1000 });
