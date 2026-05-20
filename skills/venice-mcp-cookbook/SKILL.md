@@ -265,7 +265,7 @@ Long-running. Set a `progressToken` in `_meta` to receive shot-by-shot updates. 
 ```
 
 ### `media.override_audio`
-Replace the model-native audio with Venice TTS dialogue and/or generated SFX. **This is now an exception path, not a default.** The recommended pipeline keeps the video model's native dialogue (Seedance / Wan 2.7 / HappyHorse all generate in-character audio when the panel prompt is detailed enough). Only call `override_audio { dialogue: true }` when the user explicitly wants Venice TTS — for example to swap accents, switch to a non-English voice, or repair a shot where the model botched a specific line. If you do call it, also flip `assemble.assemble { dialogueReplace: true, nativeVolume: 0.2 }` so the TTS sits on top of a ducked native track.
+Replace the model-native audio with Venice TTS dialogue and/or generated SFX. **This is now an exception path, not a default.** The recommended pipeline keeps the video model's native dialogue (Seedance / Wan 2.7 / HappyHorse all generate in-character audio when the panel prompt is detailed enough). Only call `override_audio { dialogue: true }` when the user explicitly wants Venice TTS — for example to swap accents, switch to a non-English voice, render a documentary NARRATOR voice-over, or repair a shot where the model botched a specific line. If you do call it, also flip `assemble.assemble { dialogueReplace: true }` and let `nativeVolume` default to **0** (harness ≥ 2.3.0) so the TTS owns the dialogue lane cleanly. Pass `nativeVolume: 0.2` only when you want to mix a soft ambient bed (room tone, paper rustle) under the TTS.
 
 Reasonable use case (single-shot Venice TTS rescue):
 ```json
@@ -332,10 +332,12 @@ A crowd bed for the studio interior:
 ### `assemble.assemble`
 Final mix. Layer flags (`subtitles`, `music`, `ambient`) default to `true` — pass `false` to skip a layer. The assembler runs a final-pass LUFS normalisation (-16 LUFS / -1 dBTP) and trims SFX clips to ≤2s with a 0.3s fade by default. Per-episode overrides go in `script.audioMix`.
 
-**Dialogue defaults changed (current behavior):**
+**Dialogue defaults (current behavior):**
 - `dialogueReplace` defaults to **`false`** — the video model's native dialogue plays as-is. This is the right default until Venice ships better TTS voices.
-- `nativeVolume` defaults to **`1.0`** (full volume), matching the no-replacement path.
-- Only flip `dialogueReplace: true` (and drop `nativeVolume` to ~0.2) when the user explicitly wants Venice TTS dialogue on top of a ducked native track.
+- `nativeVolume` is **optional**. The harness resolves it: **0** when `dialogueReplace: true` (so the model-native track can't double up with the Venice TTS), **1.0** otherwise.
+- Pass `nativeVolume: 0.2` explicitly only when you want a soft ambient bed (room tone, paper rustle, distant rain) mixed under the TTS.
+- The MCP rejects `dialogueReplace: true` + `nativeVolume > 0.5` at validation time — that combo was the root cause of the field-guide's double-narration bug.
+- Per-shot script.json `shot.nativeAudio: 'mute' | 'duck' | 'keep'` overrides the global default on individual shots.
 
 ```json
 {
@@ -346,8 +348,7 @@ Final mix. Layer flags (`subtitles`, `music`, `ambient`) default to `true` — p
   "music": true,
   "ambient": true,
   "ambientVolume": 0.3,
-  "dialogueReplace": false,
-  "nativeVolume": 1.0
+  "dialogueReplace": false
 }
 ```
 
@@ -357,10 +358,11 @@ If you've called `media.override_audio { dialogue: true }` upstream and want the
   "action": "assemble",
   "project": "the-audacity",
   "episode": 1,
-  "dialogueReplace": true,
-  "nativeVolume": 0.2
+  "dialogueReplace": true
 }
 ```
+
+Add `"nativeVolume": 0.2` only when you want a soft ambient bed under the Venice TTS (room tone, faint rain, paper rustle). Default is 0 — the safe choice for narrator-driven episodes.
 
 ### `assemble.produce`
 One-shot: videos -> music -> assemble. Only use after script approval and (ideally) QA approval.
