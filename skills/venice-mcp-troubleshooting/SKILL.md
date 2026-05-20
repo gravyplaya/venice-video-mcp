@@ -47,13 +47,14 @@ The harness's planner already handles this, but if you bypass it (calling Venice
 If you customize prompts via `episode.fix_panel { prompt }`:
 - Put the aesthetic/style description at the START of the prompt, not the end.
 - Add a `STYLE REMINDER:` suffix to lock it in.
-- Add `photorealistic, photograph, photo` to the negative prompt for stylized aesthetics.
+- Add `photorealistic, photograph, photo` to the negative prompt **only for stylized aesthetics**. For photoreal series ("cinematic photography", "nature documentary", "naturalist", "live action"), those anti-photoreal terms fight the positives and Seedream regresses to illustration — exactly what turned the field-guide's human LEGISLATOR into a bird. Harness ≥ 2.3.0 controls this via `series.videoDefaults.imageDefaults.negativePromptStrategy: 'auto' | 'stylized' | 'photoreal' | 'none'` (default `auto` detects photoreal aesthetics and skips the anti-photoreal guards).
 - Use `cfg_scale: 10` for character references and storyboard panels (lower values like 7 cause style drift between angles).
 
 ### A3. Shot duration — prefer 15s, native max on Seedance 2.0 and HappyHorse 1.0
-- Seedance 2.0 (all variants) accepts every integer 4s–15s natively. HappyHorse 1.0 accepts 3s–15s. `veo3.1-fast-image-to-video` only accepts 4s/6s/8s. Wan 2.7 also generates long shots for lip-sync.
+- Seedance 2.0 (all variants) accepts every integer 4s–15s natively. HappyHorse 1.0 accepts 3s–15s. `veo3.1-fast-image-to-video` only accepts 4s/6s/8s. Wan 2.7 also generates long shots for lip-sync — but Wan 2.7 R2V only allows 5s or 10s (stepped ladder).
 - **15s is the recommended default**, applied automatically by the MCP for `episode.insert_shot { duration }`. For a 30s beat, prefer 2x15s over 5x6s — identity stays anchored, costs are lower, motion has room to breathe. Drop below 15s only for deliberate short beats (hard cut, sight gag, reaction stinger).
-- If you bypass the MCP and call the harness CLI directly with a duration outside the model's allowed set, the harness will auto-snap to the nearest valid value and log `duration auto-snapped`. This now surfaces in the MCP response as a `warnings[]` entry — read it before assuming the output is what you asked for, and fix the offending duration in `script.json`.
+- Harness ≥ 2.3.0 runs an `assertShotDurationsValid` preflight before any `/video/queue` call and throws a single aggregated error listing every shot whose duration violates either its model's ceiling or its stepped ladder. So a 16s shot routed to Seedance R2V (ceiling 15s) or an 8s shot routed to Wan 2.7 R2V (ladder [5s, 10s]) fails fast with a useful message instead of waiting for Venice to return HTTP 422 mid-queue.
+- If you bypass the MCP and call the harness CLI directly with a duration outside the model's allowed set, older harness versions auto-snap to the nearest valid value and log `duration auto-snapped`. This surfaces in the MCP response as a `warnings[]` entry — read it before assuming the output is what you asked for, and fix the offending duration in `script.json`.
 - `episode.workshop`'s default script LLM tends to produce too many short shots. The MCP description for `episode.workshop.concept` now tells the agent to instruct the LLM to target 15s shots; you should also include that in the concept string when calling workshop manually.
 
 ### A4. R2V always defaults to 9:16 if you don't pass an aspect ratio
@@ -213,6 +214,15 @@ For pre-2.2.0 harness installs, the manual two-stage workflow still works: see g
 **Cause:** `dialogueReplace: true` but no Venice TTS dialogue was generated.
 **Fix (now the default path):** Pass `dialogueReplace: false` and `nativeVolume: 1.0` to use the video model's native audio. As of 2026-05 the MCP defaults are exactly this — native dialogue from Seedance/Wan/HappyHorse, music and ambient added in post — because Venice's TTS voices are still limited in range. Only flip `dialogueReplace: true` (and also run `media.override_audio { dialogue: true }` upstream) when the user explicitly wants TTS for accent control, language swap, or to fix a botched native take.
 
+### Final mp4 has TWO narrator voices speaking the same lines ("double narration")
+**Symptom:** With `dialogueReplace: true`, you hear the Venice TTS narrator AND a softer model-generated narrator underneath reading the same lines slightly offset in time.
+**Cause:** Seedance i2v generates its own English narration whenever the shot prompt contains `narrator`, `documentary`, or `naturalist`. Older harness versions defaulted `--native-volume` to 1.0 (or recommended 0.2), so the model-native track stayed audible underneath the Venice TTS.
+**Fix (harness ≥ 2.3.0):**
+- `nativeVolume` now defaults to **0** whenever `dialogueReplace: true`. Don't override unless you actually want a model-native ambient bed mixed under the TTS.
+- The MCP rejects the unsafe combo `dialogueReplace: true` + `nativeVolume > 0.5` at validation time with a hint.
+- In `script.json`, set `script.audioMix.suppressModelNarration: true` to also pass `audio: false` to Seedance for every dialogue-bearing shot — this stops the model from generating the competing narration in the first place.
+- Per-shot override: set `shot.nativeAudio: 'mute' | 'duck' | 'keep'` on individual shots when one shot has real ambient (paper rustle, room tone) you want to preserve while the rest of the episode mutes the competing narrator.
+
 ### Final mp4 has unwanted music or sound effects baked into the dialogue track
 **Cause:** Video model generated its own background music / SFX because the shot prompt didn't suppress them.
 **Fix:** Edit `script.json` shot prompts to include the negative `no background music, no sound effects, no soundtrack, dry recording`, then re-run `media.generate_videos` for the affected shots. The `episode.workshop` description now tells the script LLM to add this negative automatically; if you see baked-in music, the workshop concept was probably missing that guidance — re-workshop with it included.
@@ -235,7 +245,71 @@ For pre-2.2.0 harness installs, the manual two-stage workflow still works: see g
 ### Venice returns a "silent rejection" (200 OK with no output file)
 **Symptom:** A tool exits 0 but the expected output file is missing or zero bytes.
 **Cause:** Venice intermittently returns a successful HTTP response with no actual generation. v2.1.x catches most of these via the rejection guard, but it can still leak past with a structured retry message.
-**Fix:** Check the stderr tail for `silent rejection detected, retry N/3`. If you see `silent rejection persisted after 3 retries`, re-queue the call --- the upstream model is degraded.
+**Fix:** Check the stderr tail for `silent rejection detected, retry N/3`. If you see `silent rejection persisted after 3 retries`, re-queue the call --- the upstream model is degraded. Harness ≥ 2.3.0 also catches more rejections at higher resolutions: the byte-size ceiling is now per-resolution (1K → 50 KB, 2K → 150 KB, 4K → 400 KB) instead of a flat 30 KB, so a ~30 KB refusal stub at 1K is caught instead of silently saved.
+
+### A character reference comes back as a tiny 2 KB image (Seedream refused but didn't say so)
+**Symptom:** The `<angle>.png` file exists but is 2-3 KB; rendering it shows a blurry placeholder or a generic refusal pattern.
+**Cause:** Seedream refused the prompt and returned a sub-threshold image. The legislator-profile bypass during the PNW field-guide hit exactly this.
+**Fix (harness ≥ 2.3.0):**
+1. `add-character` now writes `<angle>.prompt.json` sidecars next to each reference image containing the resolved positive prompt, negative prompt, model, cfg_scale, aspect_ratio, seed, and returned seed. Open the matching sidecar to confirm what was sent.
+2. Tweak the prompt (try `cfg_scale: 9` if you're at 10; loosen the negative prompt; remove politically-charged or gender-coded modifiers).
+3. Hand-edit the sidecar with the rewritten prompt and re-run with the new `--override-prompt path/to/<angle>.prompt.json` flag. The override replaces the builder's output verbatim, bypassing the in-harness `buildCharacterReferencePromptParts` that may be injecting unhelpful anti-photoreal negatives. (Per-series `imageDefaults.negativePromptStrategy: 'photoreal'` is the kinder global fix.)
+
+### `script.json` `musicCues[].gain` doesn't seem to do anything
+**Cause (pre-2.3.0):** The assembler CLI never forwarded `script.musicCues` to `assembleEpisode`, so the cues-baked music path was unreachable and the hardcoded 15% music bed always applied. The `gain` field was metadata-only.
+**Fix (harness ≥ 2.3.0):** The CLI now passes the full cue list. Each cue's `gain` (default `-22 dB`) applies as a real `volume=` filter on its segment. For time-varying gain (e.g. "drop -20% by the time of shot 6"), use the new `gainStops[]` field:
+
+```json
+{
+  "startShot": 1,
+  "endShot": 10,
+  "prompt": "...",
+  "gain": -22,
+  "gainStops": [
+    { "atShot": 6, "gainDb": -32, "rampSec": 3 }
+  ]
+}
+```
+
+The expression evaluates against timeline t via `volume=<expr>:eval=frame` after the cues track is rendered.
+
+### Shot 1 looks like a still photo with a fake zoom (motion is frozen)
+**Cause:** `ffmpeg`'s `zoompan` filter freezes the first input frame on video sources (`d=N` repeats each input frame for N output frames). Any rain, crow, swaying tree etc. in the source video is collapsed into the opening frame and the rest is a slideshow.
+**Fix (harness ≥ 2.3.0):** Use `scripts/ken-burns-video.ts` instead of `zoompan`:
+
+```bash
+tsx scripts/ken-burns-video.ts \
+  --in path/to/source.mp4 \
+  --out path/to/dest.mp4 \
+  --duration 8.5 --zoom-from 1.0 --zoom-to 1.12
+```
+
+The helper uses `scale=w='W*(1+RATE*t)':h='H*(1+RATE*t)':eval=frame,crop=W:H` — per-frame evaluation, so source motion advances normally while the scale grows over time.
+
+### `series.json characters[]` is empty even though `characters/<slug>/character.json` exists on disk
+**Cause (pre-2.3.0):** Multiple commands had a Read-Modify-Write bug that loaded series.json, mutated one field, and wrote it back — clobbering `characters[]` to `[]` when the in-memory copy hadn't read it. `media.generate_videos` then couldn't find character refs and silently fell back to the panel-only path.
+**Fix (harness ≥ 2.3.0):** `saveSeries` always re-reads `characters/<slug>/character.json` from disk and merges those entries before writing. On-disk files are the single source of truth; nothing in-process can clobber them anymore.
+
+### `audition-voices` finds no British voices
+**Cause (pre-2.3.0):** Kokoro British voices live under `labels.language === 'British English'`. The filter did strict equality, so `language: 'british'` or `'uk'` or `'en-gb'` returned an empty list.
+**Fix (harness ≥ 2.3.0):** `filterVoices` now accepts `british` / `british english` / `uk` / `en-gb` as aliases, plus matches any voice_id with `bm_` / `bf_` prefix. Same fuzzy matching for `american` / `us` / `en-us` → `am_` / `af_`.
+
+## Appendix: lessons from the PNW field-guide production
+
+The harness 2.3.0 / MCP `fix/waves-1-2-production-audit` PRs are entirely backed by a single 2-minute satirical nature-documentary episode about Washington State's new tax law (mock-Audubon "Field Guide to the Pacific Northwest Entrepreneur"). The episode took five visible versions to land. Each fix above is keyed to the production bug that motivated it:
+
+| Symptom in production | Caught by |
+|---|---|
+| Final mix had two narrators (Venice TTS + Seedance-generated documentary narrator at 20%) | Default `--native-volume 0` with `--dialogue-replace`; per-shot `nativeAudio: 'mute'`; episode-level `suppressModelNarration` |
+| Music overpowered narration at the Florida-porch shot | `musicCues[].gain` actually wired through; new `gainStops[]` for time-varying gain |
+| LEGISLATOR character generated as a literal blue jay | Strategy-driven negative prompt; `negativePromptStrategy: 'auto'` skips anti-photoreal guards for photoreal aesthetics |
+| FOUNDER identity drift across multi-edit calls | `saveSeries` rebuilds `characters[]` from disk every save |
+| Shot 9 silently rejected mid-queue because it was 16s on a 15s-ceiling model | `assertShotDurationsValid` preflight catches it before any Venice call |
+| Shot 1 became a still photo with fake zoom motion | `scripts/ken-burns-video.ts` (eval=frame scale+crop, not zoompan) |
+| Character ref came back as a 2 KB refusal stub through one multi-edit path | `decodeAndAssertImage` now plugged into every image-save path with per-resolution thresholds |
+| WebP bytes written under `.png` filename confused downstream consumers | `sniffImageFormat` + `writeImageBytesSmart` |
+| Couldn't find a British narrator voice through the CLI | `filterVoices` British alias matching |
+| Three hand-rolled `/tmp/*.mjs` bypass scripts to feed custom prompts to Seedream | `add-character --override-prompt` + `.prompt.json` sidecars |
 
 ## When to escalate
 

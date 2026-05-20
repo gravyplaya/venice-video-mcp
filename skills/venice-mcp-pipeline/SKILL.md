@@ -54,8 +54,16 @@ Venice's TTS voices (Kokoro, Qwen3) are usable but limited in range and emotion.
 
 1. **Let the video gen model speak the dialogue.** Seedance 2.0, Wan 2.7, and HappyHorse 1.0 all generate in-character audio when the panel prompt includes a detailed voice/delivery description. Quality is highly prompt-dependent; spec it precisely (timbre, accent, pacing, emotional register, idiolect, breath placement).
 2. **Suppress the model from adding music or SFX.** Include negatives like "no background music, no sound effects, no soundtrack, dry recording" in every dialogue shot's prompt. The harness adds music (`musicCues[]` or `media.generate_music`) and ambient/SFX (`media.generate_ambient`, `assemble.mix_audio`) in post.
-3. **Keep `dialogueReplace: false` on `assemble.assemble`.** This is the new default. The native dialogue track plays at full volume (`nativeVolume: 1.0`), with music and ambient mixed underneath.
-4. **Use `media.override_audio { dialogue: true }` only as a deliberate corrective** — accent control, language swap, or when the model botched a specific take. Default to NOT replacing dialogue.
+3. **Keep `dialogueReplace: false` on `assemble.assemble`.** This is the default. The native dialogue track plays at full volume (`nativeVolume` resolves to 1.0), with music and ambient mixed underneath.
+4. **Use `media.override_audio { dialogue: true }` only as a deliberate corrective** — accent control, language swap, NARRATOR voice-over, or when the model botched a specific take. Default to NOT replacing dialogue.
+
+### Narrator / voice-over episodes (`dialogueReplace: true` paths)
+
+Documentary-style episodes with a NARRATOR character driving most shots are the main exception. For these:
+
+- Harness ≥ 2.3.0 auto-passes `audio: false` to Seedance for every shot whose dialogue character is `NARRATOR` (or whenever `script.audioMix.suppressModelNarration: true` is set). Seedance i2v aggressively generates a competing English narrator whenever the prompt mentions `narrator` / `documentary` / `naturalist`; this stops it from happening at the source.
+- Run `media.override_audio { dialogue: true }` to render Venice TTS for every shot's dialogue line, then `assemble.assemble { dialogueReplace: true }`. `nativeVolume` resolves to 0 automatically — no need to pass it.
+- For shots that DO have real ambient audio worth preserving (paper rustle, room tone, faint rain, foley) while the narrator's voice is muted everywhere else: set `shot.nativeAudio: 'keep'` on those shots in `script.json` to override the global mute. `'duck'` keeps the ambient at 20%; `'mute'` is the default for NARRATOR shots and is explicit-equivalent to the auto behaviour.
 
 What this means for `character.add`: the `voiceDesc` field is now the primary lever for dialogue quality. Spec it like you're directing a voice actor — see the cookbook's `character.add` example. The Venice voice you `character.lock` is the fallback for Venice TTS only; it doesn't affect the native model dialogue.
 

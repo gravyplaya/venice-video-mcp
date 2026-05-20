@@ -12,3 +12,9 @@ dist/
 *.tsbuildinfo
 coverage/
 .nyc_output/
+
+# Test deliverables / previews from production runs against this MCP.
+# These end up at the repo root because shell sessions cd into it; not
+# part of the published package.
+*.mp4
+preview/
