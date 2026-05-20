@@ -133,18 +133,59 @@ test('EpisodeInput insert_shot defaults duration to 15s (max native on Seedance 
   assert.equal(parsed.transition, 'CUT');
 });
 
-test('AssembleInput assemble defaults to native dialogue (dialogueReplace=false, nativeVolume=1.0)', () => {
+test('AssembleInput assemble defaults to native dialogue; nativeVolume is optional (harness resolves)', () => {
   const parsed = AssembleInput.parse({
     action: 'assemble',
     project: 'the-audacity',
     episode: 1,
   });
   if (parsed.action !== 'assemble') throw new Error('expected assemble');
-  assert.equal(parsed.dialogueReplace, false, 'native dialogue is the default now');
-  assert.equal(parsed.nativeVolume, 1.0, 'native volume full when not replacing');
+  assert.equal(parsed.dialogueReplace, false, 'native dialogue is the default');
+  assert.equal(parsed.nativeVolume, undefined, 'nativeVolume is unset by default (harness defaults to 0 with --dialogue-replace, 1.0 otherwise)');
   assert.equal(parsed.subtitles, true);
   assert.equal(parsed.music, true);
   assert.equal(parsed.ambient, true);
+});
+
+test('AssembleInput assemble: dialogueReplace=true with explicit nativeVolume=0 is accepted', () => {
+  const parsed = AssembleInput.parse({
+    action: 'assemble',
+    project: 'the-audacity',
+    episode: 1,
+    dialogueReplace: true,
+    nativeVolume: 0,
+  });
+  if (parsed.action !== 'assemble') throw new Error('expected assemble');
+  assert.equal(parsed.dialogueReplace, true);
+  assert.equal(parsed.nativeVolume, 0);
+});
+
+test('AssembleInput assemble: ambient-bed nativeVolume=0.2 with dialogueReplace=true is accepted (safety threshold is 0.5)', () => {
+  const parsed = AssembleInput.parse({
+    action: 'assemble',
+    project: 'the-audacity',
+    episode: 1,
+    dialogueReplace: true,
+    nativeVolume: 0.2,
+  });
+  if (parsed.action !== 'assemble') throw new Error('expected assemble');
+  assert.equal(parsed.nativeVolume, 0.2, '0.2 is the canonical ambient-bed value');
+});
+
+test('AssembleInput assemble: nativeVolume range validation still works', () => {
+  assert.throws(() => AssembleInput.parse({
+    action: 'assemble',
+    project: 'the-audacity',
+    episode: 1,
+    nativeVolume: 1.5,
+  }), /less than or equal to 1|max/i, 'values >1 must still be rejected');
+
+  assert.throws(() => AssembleInput.parse({
+    action: 'assemble',
+    project: 'the-audacity',
+    episode: 1,
+    nativeVolume: -0.1,
+  }), /greater than or equal to 0|min/i, 'negative values must still be rejected');
 });
 
 test('AssembleInput coerces edit_timeline numeric inputs', () => {
