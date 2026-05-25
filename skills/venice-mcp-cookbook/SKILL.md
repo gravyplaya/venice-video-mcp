@@ -404,6 +404,8 @@ Script-aware per-shot audio mixer. Reads `script.json` to derive native-audio vo
 
 The two assemblers overlap intentionally: `assemble.assemble` is the simple, deterministic path; `mix_audio` is the script-aware path that varies the mix per shot. Pick one per episode — they both write the same `episode-NNN-final.mp4`, so the last one wins.
 
+For any dialogue or narrator VO episode, verify the assembled cut has no overlapping spoken clips at shot boundaries. Harness rule 35 uses one global spoken-audio cursor from measured clip durations; if a line runs longer than its shot, hold the picture or shorten/split the line rather than letting it bleed into the next shot.
+
 ### `assemble.edit_transcribe`
 Always run this before any cut. `--aligned-from` is for content with a ground-truth script (Venice TTS, scripted reads).
 ```json

@@ -86,7 +86,7 @@ If the user only answers one of the two, ask the other before proceeding. Don't 
 For full per-action argument shapes see the **venice-mcp-cookbook** skill.
 For failures, gotchas, and anti-patterns see **venice-mcp-troubleshooting**.
 
-## What the underlying harness now does for you (v2.1.x)
+## What the underlying harness now does for you (v2.3.x)
 
 Several behaviours the MCP relied on the agent to orchestrate are now automatic inside the harness. You don't have to script them — but you should know they're running so you can interpret stdout:
 
@@ -96,6 +96,8 @@ Several behaviours the MCP relied on the agent to orchestrate are now automatic 
 - **LUFS audio mix.** The assembler now runs a final-pass to -16 LUFS integrated / -1 dBTP true peak by default. SFX clips are trimmed to ≤2s with a 0.3s fade-out. Episode-level overrides go in `script.audioMix`.
 - **Wan 2.7 audio pre-flight.** When a shot's `audioUrl` is shorter than 3 seconds, the harness pads it to 3s automatically (Wan 2.7 returns 400 otherwise). You'll see a "padded audio_url N.NNs -> 3.00s" line in stdout.
 - **Silent-rejection guard.** Every Venice response is checked for the "no output produced" pattern that occasionally slips past a 200 OK. The harness retries up to 3 times and surfaces a structured error instead of returning a zero-byte file.
+- **No-overlap spoken-audio scheduling.** The assembler must schedule narrator and character dialogue with one global cursor, based on measured `ffprobe` durations rather than planned shot lengths. Long VO should extend/hold the picture or be shortened/split; it should never bleed into the next shot's line.
+- **Per-shot continuity re-anchoring.** For separately rendered shots, reuse the same canonical refs and restate invariant traits in every prompt, especially relative size and any in-story state change. Prefer Seedance native multi-shot for consecutive beats when it fits.
 
 ## Shot duration strategy — prefer 15s, stitch fewer long clips
 

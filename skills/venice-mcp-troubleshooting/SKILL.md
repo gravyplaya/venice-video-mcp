@@ -181,6 +181,16 @@ You'll see `Stage A/3:` / `Stage B/3:` / `Stage C/3:` lines in the streamed prog
 
 For pre-2.2.0 harness installs, the manual two-stage workflow still works: see git history of this skill for the legacy steps.
 
+### A28. Dialogue / VO overlaps at shot boundaries
+**Symptom:** A narrator line is still playing when the next shot's character dialogue starts, or two narrator lines overlap across a cut.
+**Cause:** Spoken clips were scheduled per speaker or against planned shot durations instead of the rendered segments' measured durations. A 7.5s VO over a 5.0s rendered shot will spill into the next shot unless the scheduler accounts for it.
+**Fix:** Use one global `nextFreeSec` cursor for all spoken lines (narrator and characters), place each line at `max(shotStart + lead, nextFreeSec + gap)`, and compute `shotStart` from `ffprobe` durations of the actual rendered segments. If a line is longer than the shot, hold/freeze the picture or shorten/split the line. Then rerun cut QA and explicitly check for spoken-audio overlap.
+
+### A29. Separately rendered shots drift in identity, scale, palette, or wardrobe
+**Symptom:** A character changes size, outfit, markings, or color palette between adjacent separately rendered shots; a character that should be absent or transformed reappears in the old state.
+**Cause:** Each generation reinterprets the references and prompt. If invariant traits or in-story state changes are not restated per shot, the model falls back to a plausible but inconsistent default.
+**Fix:** Reuse the same canonical `reference_image_urls` for every shot in the sequence and restate identity, wardrobe, palette, markings, and relative size inline every time. Track in-story state explicitly (`sizeState`, `presence`, costume changes) in the shot prompt. Prefer Seedance native multi-shot for consecutive beats when the scene fits inside one generation, and scan a first-frame contact sheet before final assembly.
+
 ## Tool-specific failure modes
 
 ### `series.new` succeeds but `series.list` doesn't show it
