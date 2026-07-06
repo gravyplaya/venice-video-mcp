@@ -38,7 +38,7 @@ Ask the user:
 
 > "Which video model family fits the look you want?
 >   - **(a) Seedance 2.0** (default) — strong R2V identity anchoring, 4-15s native durations, mature audio generation, photoreal-leaning. The `seedance-2-0-fast-*` variants are cheaper / quicker for the same family.
->   - **(b) HappyHorse 1.0** — strong R2V like Seedance, but livelier hand-camera realism and more cinematic grain. Good for documentary / vérité aesthetics.
+>   - **(b) HappyHorse 1.1** — Alibaba's #1 blind-preference model (T2V + I2V). Joint single-pass video+audio with phoneme-level lip-sync in 7 languages (EN, Mandarin, Cantonese, JA, KO, DE, FR), and R2V with up to 9 reference images. Best for talking characters and multilingual localization; SFW/commercial-leaning (for mature work prefer Seedance or Wan). The `happyhorse` family routes here.
 >   - **(c) Grok Imagine** — atmosphere-rich, in-family R2V (added 2026-05). R2V durations are stepped at 5s / 8s / 10s only; the duration preflight will catch any shot scripted outside that ladder.
 >   - **(d) Kling O3** — best for stylized, illustrated, anime, or non-photoreal aesthetics. Accepts non-seedream input images.
 >   - **(?) Not sure** — pick `auto` and decide later."
