@@ -7,6 +7,8 @@ description: Use when the user asks the agent to drive the venice-video-mcp serv
 
 This skill is the workflow brain for the **venice-video-mcp** server. It tells you which of the six tools to call, in what order, for the most common requests.
 
+> **Companion: `venice-mcp-directing`.** This skill decides *which tool* and *in what order*. Its sibling **venice-mcp-directing** decides *what the creative content says* --- the concept, per-shot prompts, dialogue delivery, retakes, and continuity --- by bridging the Seedance 2.0 Skill OS (the "direct the scene, don't decorate it" engine) onto these fields. Load it whenever you are authoring or improving content, not just orchestrating. The seam-specific pointers below tell you exactly when.
+
 ## STEP 0 — Upfront questionnaire (ask BEFORE `series.new`)
 
 A 30-second conversation at series-creation time eliminates an entire class of expensive bugs. **Always ask these two questions before calling `series.new`**, unless the user has already volunteered the answers. Persist them via the new `audioStrategy` and `videoFamilyPreference` fields on `series.new`.
@@ -71,6 +73,10 @@ If the user hasn't told you the platform / aspect ratio, ask whether the episode
 - The user opts out ("just pick reasonable defaults"). In that case use `audioStrategy: 'native'` and `videoFamilyPreference: 'auto'` — and **say** that's what you're doing.
 
 If the user only answers one of the two, ask the other before proceeding. Don't guess.
+
+### Directing note for STEP 0
+
+If the idea is still vague at series/episode-creation time, run the Seedance OS `seedance-interview` (short form for a fast brief) before you draft anything --- see **venice-mcp-directing**. For a longer or multi-clip story, run `seedance-sequence` to establish the story spine and **one directorial voice** you will hold across shots and episodes. Fold that into the `episode.workshop` concept later; it costs nothing here and prevents a generic, decorated script.
 
 ## The 6 tools (always-loaded surface)
 
@@ -200,14 +206,14 @@ A character must be added AND locked before generating an episode that uses them
 The user says: "Make episode 3 about Y."
 
 1. `episode.new { project, title }` --- scaffolds the episode dir + empty script.json.
-2. `episode.workshop { project, episode, concept, model? }` --- LLM-drafts a shot-by-shot script.
-3. Stop and let the user review/edit `script.json` directly. Then:
+2. `episode.workshop { project, episode, concept, model? }` --- LLM-drafts a shot-by-shot script. **Direct the concept first** (see **venice-mcp-directing**): fold in the `seedance-interview`/`seedance-sequence` spine and name one intention per beat so the draft comes back directed, not decorated. The harness's in-code workshop prompt already carries the "direct, don't decorate" instruction, but a directed `concept` string is what makes it land.
+3. Stop and let the user review/edit `script.json` directly. **Before approving, read each shot `description` through the `directing-engine` lens** (one intention -> coherent camera/light/blocking/performance/sound) and run `seedance-antislop` + `vocab/*` to strip empty "cinematic" boosters. Confirm every `description` still ends with the no-music/no-SFX negative. Then:
 4. `episode.approve { project, episode, notes? }`.
 5. `episode.storyboard { project, episode, refine: true, editModel?, force? }` --- generates panels (slow, supports progress notifications).
 6. `episode.qa { project, episode, model?, shots? }` --- vision-based consistency check.
-7. For each flagged shot: `episode.fix_panel { project, episode, shot, characters?, prompt? }`. Re-run QA after.
+7. For each flagged shot: `episode.fix_panel { project, episode, shot, characters?, prompt? }`. Re-run QA after. **Run this loop through the Seedance OS `retake-protocol`** (see venice-mcp-directing): triage the verdict, change **one variable** per fix, and keep an attempt budget instead of regenerating blindly.
 8. `episode.qa_approve { project, episode, notes? }`.
-9. `media.generate_videos { project, episode }` --- LONG. Stream progress.
+9. `media.generate_videos { project, episode }` --- LONG. Stream progress. **Before this expensive step, run `seedance-copyright`** over the cast/props/references and rewrite any protected IP, real person, brand, logo, or song into a safe creative equivalent --- this is the hard-to-undo step.
 10. (Optional) `media.generate_music { project, episode, prompt?, duration? }` --- only needed if the script has no `musicCues[]`; per-act cues render automatically during assembly.
 11. `assemble.assemble { project, episode, ... }` --- final mp4 with subtitles + music + ambient bed, mixed to -16 LUFS.
 
@@ -215,6 +221,8 @@ If the user said "just produce it from approved script" jump from step 8 to `ass
 
 ### Recipe 3b: Add a beat to an already-rendered episode
 The user says: "Insert a reaction shot after shot 5 of episode 3."
+
+**Direct the new beat from accepted footage, not the original plan.** Use the Seedance OS `continuation-handoff` / `sequence-project-state` model (see **venice-mcp-directing**): the episode's already-rendered shots are the source of truth, so write the inserted shot's `description` to flow from the *observed* final state of the shot it follows, holding the same directorial voice.
 
 1. `episode.insert_shot { project, episode, after: "5", description, shotType?, duration?, motion?, characters?, dialogue?, speaker?, transition? }` --- assigns a suffix id like `5b` so existing shot numbers (and their already-rendered panels/clips) stay stable.
 2. `episode.storyboard { project, episode, force: false }` --- only the new shot's panel is generated; existing panels are left in place.

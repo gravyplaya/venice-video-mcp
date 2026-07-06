@@ -2,7 +2,7 @@
 
 A token-lean **MCP server** for the [venice-video-harness](https://github.com/jordanurbs/venice-video-harness): consistency-first AI video creation through Venice — series, branded content, narrative, or any multi-shot workflow.
 
-The server exposes **6 verb tools** (~600 always-loaded tokens) instead of 20+ granular ones. Workflow knowledge lives in **3 companion skills** that the agent loads on demand.
+The server exposes **6 verb tools** (~600 always-loaded tokens) instead of 20+ granular ones. Workflow knowledge lives in **4 companion skills** that the agent loads on demand — including an optional **directing** bridge to the [Seedance 2.0 Skill OS](#directing-layer-optional).
 
 > Tracks **venice-video-harness v2.3.x** (2026-05-20 sync): automatic Seedance R2V → Wan 2.7 keyframe pipeline for dialogue shots (CLAUDE.md rule 32; locks character identity into Wan 2.7 i2v's single keyframe and inline-TTS-generates the dialogue MP3 if absent), global no-overlap spoken-audio scheduling from measured clip durations (rules 35-36), per-shot reference re-anchoring to prevent cross-shot continuity drift (rule 37), Seedance scene-level multi-shot default, motion-classified routing (Wan 2.7 lip-sync for low/medium-motion dialogue), per-act music cues with crossfade + new time-varying `gainStops[]`, LUFS audio mix, FCPXML / Premiere xmeml / DaVinci-tuned timeline export, `insert-shot` mid-script, an upfront series-creation questionnaire (`audioStrategy`, `videoFamilyPreference`) that drives model selection + audio routing for the whole series, and the current model families: Seedance 2.0 (+ Fast variant), HappyHorse 1.0, Wan 2.7 (i2v / R2V / Spicy), Wan 2.6 (+ R2V), Runway Gen-4.5, DaVinci MagiHuman (30s lip-sync), PixVerse C1, Kling O3 4K / V3 4K, Grok Imagine (now with R2V), Sora 2 Pro (now 20s + true 1080p), Veo 3.1, LTX Video 2.0, Longcat. The MCP shells out to the harness CLI, so it picks up new harness commits automatically — only the tool surface / schemas / skills need to follow when the harness changes shape.
 
@@ -64,13 +64,49 @@ Several behaviours the MCP relied on the agent to orchestrate are now automatic 
 
 ## Companion skills
 
-Three Markdown skills are shipped under `skills/`:
+Four Markdown skills are shipped under `skills/`:
 
 - **`venice-mcp-pipeline`** — natural-language → tool-call recipes for the common end-to-end workflows.
 - **`venice-mcp-cookbook`** — every action with copy-paste argument examples.
 - **`venice-mcp-troubleshooting`** — every known production gotcha (wrong aspect ratio, character drift, Seedance provenance, filler-trim rules) with cause + fix.
+- **`venice-mcp-directing`** — the *directing* bridge. Where pipeline decides which tool to call, this decides what the creative content says (concept, per-shot prompts, dialogue delivery, retakes, continuity) by bridging the [Seedance 2.0 Skill OS](#directing-layer-optional) onto the tool surface: **direct the scene, don't decorate it.**
 
 Skills load on demand — they cost zero tokens until the agent decides it needs them.
+
+---
+
+## Directing layer (optional)
+
+The pipeline is the *production crew* — it locks character identity, runs QA, mixes audio, assembles, and exports. It does not, by itself, make a shot feel **directed**. For that, install the [**Seedance 2.0 Skill OS**](https://github.com/emily2040/seedance-2.0) alongside this MCP.
+
+That package is pure directing/prompting knowledge (no execution code): read a scene's dramatic function, name **one intention**, and derive camera, light, blocking, performance, and sound from it — instead of stacking "cinematic" adjectives — then hold one directorial voice across an entire story. Venice ships **Seedance 2.0 (+ Fast)** as a video model family, so that knowledge applies almost verbatim.
+
+The `venice-mcp-directing` companion skill is the seam. It maps each Seedance OS sub-skill (`seedance-interview`, `directing-engine`, `retake-protocol`, `continuation-handoff`, `seedance-copyright`, `seedance-antislop`, `vocab/*`, …) onto the venice-video-mcp field it feeds (`episode.workshop` concept, per-shot `description`, `character.add voiceDesc`, the `episode.qa` → `fix_panel` loop, `episode.insert_shot`), and reconciles the three places the two systems collide:
+
+- **Identity** — the harness owns it (R2V refs + the Seedance → Wan keyframe pass), so you direct intention/camera/light/blocking/sound and *don't* hand-write identity locks or `[Image1]` reference tags into prompts.
+- **Audio** — both systems agree: native model dialogue + suppress model music/SFX + add music/ambient in post.
+- **Duration & multi-shot** — the harness duration preflight, the 15s-default rule, and its automatic scene-level multi-shot grouping are authoritative; ignore Seedance OS's surface-specific durations and cut grammar.
+
+### Install it
+
+Seedance OS is **referenced, not vendored** — install it separately so it stays fresh via its own updates. Common targets (verify in your client):
+
+```bash
+# Cursor workspace
+.cursor/skills/seedance-20/
+
+# Claude Code (workspace or global)
+.claude/skills/seedance-20/    or    ~/.claude/skills/seedance-20/
+
+# .agents/skills convention (Codex, Antigravity, OpenCode, Amp, Goose)
+.agents/skills/seedance-20/
+```
+
+Clone the repo into the target directory (its root is shaped as the `seedance-20` skill), or use its own installer (`python scripts/install_codex_skill.py --force` for Codex). Then install this repo's companion skills as usual (`node bin/install-skills.js …`) — the `venice-mcp-directing` bridge is auto-discovered.
+
+The directing engine also reaches the **harness directly**: `venice-video-harness` carries the same "direct, don't decorate" instruction inside its in-code workshop system prompt and its `.claude/` agents/skills/commands, so both the MCP path and the harness CLI produce directed prompts. See the harness README's directing section.
+
+If Seedance OS is *not* installed, `venice-mcp-directing` still applies its self-contained core rule and the three reconciliations — you just lose the deeper genre library and multilingual vocabulary.
 
 ---
 
@@ -289,7 +325,8 @@ venice-video-mcp/
 ├── skills/
 │   ├── venice-mcp-pipeline/SKILL.md
 │   ├── venice-mcp-cookbook/SKILL.md
-│   └── venice-mcp-troubleshooting/SKILL.md
+│   ├── venice-mcp-troubleshooting/SKILL.md
+│   └── venice-mcp-directing/SKILL.md   # bridge to Seedance 2.0 Skill OS
 ├── scripts/
 │   ├── install-skills.ts            # workspace + global symlink installer
 │   └── update.ts                    # `venice-video-mcp-update` implementation
