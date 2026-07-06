@@ -43,7 +43,7 @@ Defaults reflect venice-video-harness v2.1.x: video defaults are Seedance 2.0 i2
 `videoFamilyPreference` (optional, ask first):
 - `"auto"` / unset — Seedance 2.0 across the board (current default).
 - `"seedance"` — explicit Seedance 2.0 (persisted).
-- `"happyhorse"` — HappyHorse 1.0 i2v + R2V. Livelier hand-camera realism, more cinematic grain. Same provenance gate as Seedance.
+- `"happyhorse"` — HappyHorse 1.1 i2v + R2V (Alibaba, #1 blind-preference T2V + I2V). Joint single-pass video+audio, 7-language phoneme lip-sync, R2V up to 9 refs. Best for talking characters + multilingual localization; SFW-leaning. Same provenance gate as Seedance. (1.0 IDs remain in the registry for back-compat.)
 - `"grok-imagine"` — Grok Imagine i2v + R2V (R2V durations stepped at 5s / 8s / 10s only). Family stays in-family for character consistency.
 - `"kling-o3"` — Kling O3 Standard everywhere. Best for stylized / illustrated aesthetics.
 
@@ -162,6 +162,30 @@ LLM-drafts the shot-by-shot script via Venice chat completions. Stop and let the
   "model": "llama-3.3-70b"
 }
 ```
+
+#### Directed `concept` (with the venice-mcp-directing bridge)
+
+Load **venice-mcp-directing** and shape the concept before you send it. A *directed* concept names one intention per beat and a single directorial voice — so the draft comes back directed, not decorated. The harness's in-code workshop prompt already carries the "direct, don't decorate" instruction; a directed `concept` is what makes it land. Note it directs **intention/camera/light/blocking/performance/sound only** — never exhaustive character-identity descriptions or `[Image1]`-style reference tags (the harness owns identity via R2V + the Wan keyframe pass).
+
+```json
+{
+  "action": "workshop",
+  "project": "the-audacity",
+  "episode": 1,
+  "concept": "One directorial voice for the whole episode: patient predator vs. flailing prey — the camera stays calm while Chad unravels. ~60s, 4 shots at 15s. Give each shot ONE intention and derive the craft from it, don't stack 'cinematic' adjectives:\n- Shot 1 (the pitch): intention = Chad's overconfidence outruns the room. Locked-off medium two-shot, flat even key so nothing flatters him; he leans in, Vivienne stays still. Chad breathless nasal tenor, no pauses.\n- Shot 2 (the turn): intention = she lets him hang himself. Slow push-in to Vivienne's medium close-up, warm side light, she says nothing for a beat then lands one dry line at half volume — deliberate contralto, breath audible before the punchline.\n- Shot 3 (the kill): intention = the power flips. Hold on Chad's close-up as his confidence cracks; no camera move, let the stillness do it.\n- Shot 4 (button): intention = she's already moved on. Wide, she stands and exits frame; he's left small in the composition.\nEvery shot description must end with: No background music, no sound effects, no soundtrack, dry recording. The harness adds music and ambient in post.",
+  "model": "llama-3.3-70b"
+}
+```
+
+#### Directed per-shot prompt (what a good `description` looks like)
+
+When you edit `script.json` by hand or pass a `description` to `episode.insert_shot`, direct the shot — one intention, coherent craft, character named but not physically re-described:
+
+```text
+Medium close-up, eye-level; Vivienne lowers her glass and her hands go still as a slow push-in arrives. Warm side light keeps her face plain, not glamorous. She holds a full beat, then delivers the line at half volume so Chad has to lean in. VIVIENNE: "Bless your heart, Chad." Delivery: deliberate warm contralto, honeyed sarcasm sitting under warmth not on top of it, one audible breath before the line. No background music, no sound effects, no soundtrack, dry recording.
+```
+
+Contrast with the decorated version to avoid: `epic cinematic close-up of a stunning woman, dramatic beautiful lighting, emotional, 4k, masterpiece`. Same shot, no direction — the model has nothing to serve.
 
 ### `episode.approve`
 ```json

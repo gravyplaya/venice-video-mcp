@@ -44,7 +44,7 @@ export const SeriesNew = z.object({
     'Swaps actionModel/atmosphereModel/characterConsistencyModel; lipSyncModel stays on Wan 2.7 regardless. ' +
     '"auto" (default) — Seedance 2.0 across the board. ' +
     '"seedance" — explicit Seedance 2.0 (same as auto, but persisted). ' +
-    '"happyhorse" — HappyHorse 1.0 for livelier hand-camera realism / cinematic grain. ' +
+    '"happyhorse" — HappyHorse 1.1 (Alibaba, #1 blind-preference T2V + I2V): joint single-pass video+audio, 7-language phoneme lip-sync, R2V with up to 9 refs. Best for talking characters + multilingual localization (SFW-leaning). ' +
     '"grok-imagine" — Grok Imagine i2v + R2V (R2V durations stepped at 5s/8s/10s only; the duration preflight will catch off-ladder shots). ' +
     '"kling-o3" — Kling O3 Standard for stylized / illustrated aesthetics.',
   ),
