@@ -217,6 +217,16 @@ export const MediaGenerateMusic = z.object({
   episode: Episode,
   prompt: z.string().optional(),
   duration: coercePositiveInt({ min: 1, max: 600 }).default(60),
+  model: z.string().optional().describe(
+    'Venice music/audio model id. Default is the harness music default (elevenlabs-music). ' +
+    'Pass "seed-audio-1-0" for BytePlus Seed Audio 1.0 — expressive, prompt-directed narration/VO with named voices and speed control.',
+  ),
+  voice: z.string().optional().describe(
+    'Voice id for voice-enabled models (e.g. seed-audio-1-0: "Tim", "Vivi", … or "Describe in prompt" to steer via the prompt text).',
+  ),
+  speed: coerceFiniteNumber({ min: 0.25, max: 4 }).optional().describe(
+    'Playback speed for speed-enabled models (seed-audio-1-0 accepts 0.5–2; out-of-range values are clamped harness-side).',
+  ),
 }).strict();
 
 export const MediaValidate = z.object({
@@ -446,6 +456,9 @@ export const MediaShape = z.object({
   sfx: z.boolean().optional().describe('(override_audio) generate SFX overrides'),
   prompt: z.string().optional().describe('(generate_music, generate_ambient) prompt for the model'),
   duration: z.union([z.string(), z.coerce.number()]).optional().describe('(generate_music) seconds (string ok), default 60; (generate_ambient) seconds, default 22'),
+  model: z.string().optional().describe('(generate_music) Venice music/audio model id, e.g. "seed-audio-1-0" for expressive prompt-driven narration/VO; default elevenlabs-music'),
+  voice: z.string().optional().describe('(generate_music) voice id for voice-enabled models (e.g. seed-audio-1-0)'),
+  speed: z.coerce.number().optional().describe('(generate_music) playback speed for speed-enabled models (seed-audio-1-0: 0.5–2)'),
   videoOutputs: z.boolean().optional().describe('(validate) run validate-video-outputs instead of validate-episode'),
   layer: z.enum(AMBIENT_LAYERS).optional().describe('(generate_ambient) ambient slot: rain-heavy | rain | crowd | quiet-night'),
 }).shape;

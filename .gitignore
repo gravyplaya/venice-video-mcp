@@ -18,3 +18,7 @@ coverage/
 # part of the published package.
 *.mp4
 preview/
+
+# Generated series/episode assets from production runs (characters, shots,
+# scripts, audio). Not part of the published package.
+output/

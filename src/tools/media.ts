@@ -31,6 +31,9 @@ export async function handleMedia(input: MediaInputT, ctx: ProgressCtx = {}): Pr
       case 'generate_music': {
         const args = ['generate-music', '-p', project, ...epArgs, '--duration', String(input.duration)];
         if (input.prompt) args.push('--prompt', input.prompt);
+        if (input.model) args.push('--model', input.model);
+        if (input.voice) args.push('--voice', input.voice);
+        if (input.speed !== undefined) args.push('--speed', String(input.speed));
         const r = await runHarness(args, { signal: ctx.signal, timeoutMs: 15 * 60 * 1000 });
         return fromHarness(r, `music generated for episode ${input.episode}`, {
           paths: {

@@ -281,7 +281,7 @@ export function matchCategory(id: string, cat: string): boolean {
   }
   if (cat === 'edit') return /-edit$/.test(id) || /\bedit\b/.test(id);
   if (cat === 'tts') return /^tts-|^elevenlabs-tts-/.test(id);
-  if (cat === 'music') return /(music|ace-step|stable-audio|minimax-music)/i.test(id);
+  if (cat === 'music') return /(music|ace-step|stable-audio|minimax-music|lyria|seed-audio)/i.test(id);
   if (cat === 'sfx') return /(sound-effects|mmaudio)/i.test(id);
   // `vision` is only meaningful for the live registry (capabilities.supportsVision)
   // since the harness's offline file doesn't carry capability flags. It always
