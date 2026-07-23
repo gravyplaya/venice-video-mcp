@@ -83,6 +83,8 @@ Multi-edit interprets reference images literally. A mostly-white/transparent log
 The harness defaults to Seedance 2.0 for video, which has a provenance gate: face-bearing input images must be produced by `seedream-v5-lite` / `seedream-v5-lite-edit`. Object/establishing/atmosphere images can come from any family.
 **What to watch for:** If `media.generate_videos` 4xx's with a Seedance error, check `inspect.shot` --- you'll see a `provenance.json` sidecar identifying the wrong-family image. Either re-generate that panel with seedream, or override `videoDefaults` in `series.json` to a non-Seedance family (Kling O3 + Veo).
 
+Harness ≥ 2.4.0 also writes a `shot-NNN.recipe.json` sidecar next to every generated asset — the full append-only log of every AI pass (model, prompt, seed, cfg, ref paths, role). When a shot looks wrong or a regen doesn't match the episode, read the recipe first: it tells you exactly which passes produced the current pixels and which are safe to redo (see pipeline skill, Recipe 3c).
+
 The compatibility behaviour is controlled by `videoDefaults.seedanceCompatibility`:
 - `prompt` (default in TTY) — list offending files and wait for `fallback` or `launder`.
 - `fallback` (default in CI / non-TTY) — reroute that shot to `kling-o3-standard-reference-to-video` (R2V) or `veo3.1-fast-image-to-video` (i2v); other shots in the run stay on Seedance.

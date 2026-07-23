@@ -230,6 +230,19 @@ The user says: "Insert a reaction shot after shot 5 of episode 3."
 4. `media.generate_videos { project, episode }` --- generates the missing clip only; existing clips are kept.
 5. `assemble.assemble { project, episode, ... }` --- re-stitches with the new shot in place.
 
+### Recipe 3c: Finish / polish a harness shot (recipe sidecars)
+The user says: "Polish shot 7," "make shot 7 less gritty," or "regenerate shot 7 so it matches the episode."
+
+Harness ≥ 2.4.0 writes a `shot-NNN.recipe.json` sidecar next to every generated asset (panels, character refs, videos): an append-only log where each entry is a replayable Venice call — kind (`generate` / `multi-edit` / `video-generate` / `mechanical`), role (`content` / `identity` / `look` / `mechanical`), model, prompt, negative, seed, cfg, and reference-image paths. **All finishing is done with AI model calls, never local pixel edits.**
+
+1. `inspect.shot { project, episode, shot }` — the file list includes `shot-NNN.recipe.json`. Read it to see every pass that produced the current pixels.
+2. Decide by role what to touch:
+   - **look** passes (style match, grade, polish) — freely redoable; re-edit with the same edit model family.
+   - **identity** passes (character refine, R2V refs, seeds) — never disturb these during a look polish; face-bearing panels must stay in the seedream edit family or the Seedance gate breaks.
+   - **content** passes — redoing one invalidates everything after it in the chain; replay the later passes too.
+3. To make a NEW shot match the episode, replay the recipe scaffolding of a good shot: same `STYLE:` string, seed, cfg, character ref paths, and the scene's `.style-anchor.png` (kept on disk for exactly this).
+4. Any finishing pass must be appended to the recipe via the harness's `appendRecipePass()` (`src/venice/recipe.ts`) so the sidecar and provenance stay honest for the next agent.
+
 ### Recipe 4: Generate ambient beds + run the script-aware mixer
 The user says: "Add a rain bed to episode 2 and re-mix it." or "Mix this episode with ambient layering instead of the basic assembler."
 
