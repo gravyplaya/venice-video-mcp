@@ -78,16 +78,21 @@ If the user only answers one of the two, ask the other before proceeding. Don't 
 
 If the idea is still vague at series/episode-creation time, run the Seedance OS `seedance-interview` (short form for a fast brief) before you draft anything --- see **venice-mcp-directing**. For a longer or multi-clip story, run `seedance-sequence` to establish the story spine and **one directorial voice** you will hold across shots and episodes. Fold that into the `episode.workshop` concept later; it costs nothing here and prevents a generic, decorated script.
 
-## The 6 tools (always-loaded surface)
+## The 7 tools (always-loaded surface)
 
 | Tool | Actions | Long-running? |
 |---|---|---|
 | `series` | `new`, `list`, `set_aesthetic`, `explore_aesthetic` | no |
-| `character` | `add`, `audition_voices`, `lock` | sometimes (image gen) |
+| `character` | `add`, `audition_voices`, `lock`, `generate_voice_reference` | sometimes (image gen / audio gen) |
+| `location` | `add`, `generate_references`, `list` | sometimes (image gen) |
 | `episode` | `new`, `workshop`, `approve`, `storyboard`, `qa`, `qa_approve`, `fix_panel`, `insert_shot` | sometimes (storyboard, qa) |
 | `media` | `generate_videos`, `override_audio`, `generate_music`, `generate_ambient`, `validate` | **yes** |
 | `assemble` | `assemble`, `produce`, `mix_audio`, `edit_transcribe`, `edit_render`, `edit_timeline`, `export_timeline` | **yes** (except `export_timeline`, which is cheap XML write) |
 | `inspect` | `list`, `series`, `episode`, `shot`, `models`, `voices` | no |
+
+**Locations** are first-class environments with generated reference images (wide / medium / detail). Tag shots with `location: <slug>` and the harness folds the location ref into panels and video (Kling → `scene_image_urls`; Seedance / HappyHorse → `reference_image_urls` + an `@ImageN` env tag). `episode.workshop` auto-defines locations, tags every shot, and generates any missing refs after saving the draft — so you usually don't call the `location` tool by hand unless you want an explicit place before workshopping, or to regenerate a ref.
+
+**Voice references** keep a character's voice consistent across shots. On dialogue shots that route to a reference-audio model (Seedance 2.0 R2V family, HappyHorse 1.1 R2V), the harness attaches the speaker's `characters/<slug>/voice-reference.mp3` as `reference_audio_urls` (bound in-prompt as `@AudioN`), auto-generating it from `voiceDescription` on first use. Pre-bake or import a real recording with `character.generate_voice_reference` / `character.lock { voiceReference }`. Disable per-run with the harness `--no-voice-reference` or series-wide `videoDefaults.voiceReferenceForDialogue: false`.
 
 For full per-action argument shapes see the **venice-mcp-cookbook** skill.
 For failures, gotchas, and anti-patterns see **venice-mcp-troubleshooting**.
@@ -238,7 +243,7 @@ Harness ≥ 2.4.0 writes a `shot-NNN.recipe.json` sidecar next to every generate
 1. `inspect.shot { project, episode, shot }` — the file list includes `shot-NNN.recipe.json`. Read it to see every pass that produced the current pixels.
 2. Decide by role what to touch:
    - **look** passes (style match, grade, polish) — freely redoable; re-edit with the same edit model family.
-   - **identity** passes (character refine, R2V refs, seeds) — never disturb these during a look polish; face-bearing panels must stay in the seedream edit family or the Seedance gate breaks.
+   - **identity** passes (character refine, R2V refs, seeds) — never disturb these during a look polish. (The old rule that face-bearing panels must stay in the seedream edit family was removed 2026-07 — Seedance now accepts any image family.)
    - **content** passes — redoing one invalidates everything after it in the chain; replay the later passes too.
 3. To make a NEW shot match the episode, replay the recipe scaffolding of a good shot: same `STYLE:` string, seed, cfg, character ref paths, and the scene's `.style-anchor.png` (kept on disk for exactly this).
 4. Any finishing pass must be appended to the recipe via the harness's `appendRecipePass()` (`src/venice/recipe.ts`) so the sidecar and provenance stay honest for the next agent.

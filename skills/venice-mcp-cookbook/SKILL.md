@@ -13,7 +13,7 @@ Conventions:
 - `episode` and `shot` are integers (1-based).
 - Coercion is enabled: passing `"1"` for a number works, but prefer real numbers.
 
-Defaults reflect venice-video-harness v2.1.x: video defaults are Seedance 2.0 i2v / R2V with auto-fallback to Kling O3 for 3+ character scenes; dialogue shots with `motion: 'low' | 'medium'` and a visible face route to `wan-2-7-image-to-video` for lip-sync. Edit-model defaults are `seedream-v5-lite-edit` (Seedance-compatible). For non-face-bearing panels, `gpt-image-2-edit` / `nano-banana-pro-edit` are valid alternatives.
+Defaults reflect venice-video-harness v2.1.x: video defaults are Seedance 2.0 i2v / R2V with auto-fallback to Kling O3 for 3+ character scenes; dialogue shots with `motion: 'low' | 'medium'` and a visible face route to `wan-2-7-image-to-video` for lip-sync. Image + edit defaults are `nano-banana-2` / `nano-banana-2-edit` for ALL panels — the old seedream-only requirement for face-bearing Seedance inputs was removed (2026-07). `gpt-image-2` / `nano-banana-pro` (and their `-edit` variants) are valid alternatives.
 
 ---
 
@@ -121,6 +121,7 @@ Generates 5 candidate voices. Sample text defaults to a generic line; pass one t
 ```
 
 ### `character.lock`
+`voiceReference` is optional: pass a path to an operator-supplied voice-donor clip (wav/mp3) to import it as this character's `reference_audio_urls` donor (normalized to 2-15s). Omit it to let the harness auto-generate one from `voiceDescription` on the first dialogue shot that routes to a reference-audio-capable model.
 ```json
 {
   "action": "lock",
@@ -129,6 +130,62 @@ Generates 5 candidate voices. Sample text defaults to a generic line; pass one t
   "voiceId": "Serena",
   "voiceName": "Serena"
 }
+```
+
+### `character.generate_voice_reference`
+Make (or import) the voice-donor clip used as `reference_audio_urls` (@AudioN) so a character's voice stays consistent across shots on Seedance 2.0 R2V / HappyHorse 1.1 R2V. Default source is `seed-audio-1-0` steered by the character's `voiceDescription`; the clip is normalized to 2-15s and written to `characters/<slug>/voice-reference.mp3`. This is optional — the harness auto-generates a missing clip inline during `media.generate_videos`. Call it explicitly to pre-bake, override the spoken text/voice/speed, or import a real recording via `file`.
+```json
+{
+  "action": "generate_voice_reference",
+  "project": "the-audacity",
+  "character": "VIVIENNE",
+  "voice": "Serena",
+  "speed": 1
+}
+```
+Import an operator recording instead of generating:
+```json
+{
+  "action": "generate_voice_reference",
+  "project": "the-audacity",
+  "character": "VIVIENNE",
+  "file": "/abs/path/to/vivienne-voice.mp3"
+}
+```
+
+---
+
+## location
+
+First-class environment entities with generated reference images (wide / medium / detail), used to anchor the setting across storyboard panels and video the way characters anchor identity. Tag shots with `location: <slug>` (workshop-episode does this automatically). On Kling O3 R2V the location fills `scene_image_urls`; on Seedance / HappyHorse the wide ref folds into `reference_image_urls` with a matching `@ImageN` env tag.
+
+### `location.add`
+Defines a location and generates its 3 faceless reference angles (`nano-banana-pro`, `hasFace:false`). `lighting` carries into every panel prompt for the place (lighting-consistency).
+```json
+{
+  "action": "add",
+  "project": "the-audacity",
+  "name": "Sietch Workshop",
+  "description": "a cramped underground workshop of copper pipes, salvaged consoles, and warm lamplight",
+  "lighting": "warm amber lamplight, deep shadows, single overhead work lamp"
+}
+```
+
+### `location.generate_references`
+(Re)generate a location's reference angles. `force: true` archives prior versions and regenerates.
+```json
+{
+  "action": "generate_references",
+  "project": "the-audacity",
+  "location": "sietch-workshop",
+  "force": true
+}
+```
+
+### `location.list`
+Read-only list of the series' locations (slug, description, whether refs exist). No spawn.
+```json
+{ "action": "list", "project": "the-audacity" }
 ```
 
 ---
@@ -200,7 +257,7 @@ Generates panels for every shot in the approved script. Refinement is on by defa
   "project": "the-audacity",
   "episode": 1,
   "refine": true,
-  "editModel": "seedream-v5-lite-edit",
+  "editModel": "nano-banana-2-edit",
   "cfgScale": 10,
   "skipApproval": false,
   "force": false,
@@ -234,7 +291,7 @@ Multi-edit a single panel to correct drift. Pass `characters` if only specific c
   "episode": 1,
   "shot": 5,
   "characters": "VIVIENNE,CHAD",
-  "editModel": "seedream-v5-lite-edit"
+  "editModel": "nano-banana-2-edit"
 }
 ```
 

@@ -47,8 +47,23 @@ export async function handleCharacter(input: CharacterInputT): Promise<ToolConte
           '--voice-id', input.voiceId,
         ];
         if (input.voiceName) args.push('--voice-name', input.voiceName);
+        if (input.voiceReference) args.push('--voice-reference', input.voiceReference);
         const r = await runHarness(args);
         return fromHarness(r, `locked voice for ${input.character}`);
+      }
+      case 'generate_voice_reference': {
+        const args = [
+          'generate-voice-reference',
+          '-p', resolveProjectPath(input.project),
+          '-c', input.character,
+        ];
+        if (input.text) args.push('--text', input.text);
+        if (input.voice) args.push('--voice', input.voice);
+        if (input.speed !== undefined) args.push('--speed', String(input.speed));
+        if (input.file) args.push('--file', input.file);
+        if (input.model) args.push('--model', input.model);
+        const r = await runHarness(args);
+        return fromHarness(r, `generated voice reference for ${input.character}`);
       }
       default: {
         const exhaustive: never = input;

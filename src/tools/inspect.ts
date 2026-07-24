@@ -228,6 +228,13 @@ function summarizeSeries(data: any) {
           voiceId: c.voiceId,
         }))
       : [],
+    locations: Array.isArray(data.locations)
+      ? data.locations.map((l: any) => ({
+          name: l.name,
+          slug: l.slug,
+          lightingNotes: l.lightingNotes ?? null,
+        }))
+      : [],
     episodes: Array.isArray(data.episodes)
       ? data.episodes.map((e: any) => ({ number: e.number, title: e.title, status: e.status }))
       : [],

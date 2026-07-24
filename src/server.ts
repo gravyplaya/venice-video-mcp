@@ -8,12 +8,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   SeriesInput,
   CharacterInput,
+  LocationInput,
   EpisodeInput,
   MediaInput,
   AssembleInput,
   InspectInput,
   SeriesShape,
   CharacterShape,
+  LocationShape,
   EpisodeShape,
   MediaShape,
   AssembleShape,
@@ -21,6 +23,7 @@ import {
 } from './schemas.js';
 import { handleSeries } from './tools/series.js';
 import { handleCharacter } from './tools/character.js';
+import { handleLocation } from './tools/location.js';
 import { handleEpisode } from './tools/episode.js';
 import { handleMedia } from './tools/media.js';
 import { handleAssemble } from './tools/assemble.js';
@@ -108,6 +111,19 @@ server.registerTool(
     const parsed = CharacterInput.safeParse(args);
     if (!parsed.success) return err('invalid args for character', { stderrTail: formatZodError(parsed.error) });
     return handleCharacter(parsed.data);
+  },
+);
+
+server.registerTool(
+  'location',
+  {
+    description: `Manage first-class locations in a series (add / generate_references / list). Locations anchor the environment across storyboard panels and video generations the way characters anchor identity. ${SKILL_HINT}`,
+    inputSchema: LocationShape,
+  },
+  async (args: any) => {
+    const parsed = LocationInput.safeParse(args);
+    if (!parsed.success) return err('invalid args for location', { stderrTail: formatZodError(parsed.error) });
+    return handleLocation(parsed.data);
   },
 );
 

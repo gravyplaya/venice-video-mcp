@@ -2,7 +2,7 @@
 
 A token-lean **MCP server** for the [venice-video-harness](https://github.com/jordanurbs/venice-video-harness): consistency-first AI video creation through Venice — series, branded content, narrative, or any multi-shot workflow.
 
-The server exposes **6 verb tools** (~600 always-loaded tokens) instead of 20+ granular ones. Workflow knowledge lives in **4 companion skills** that the agent loads on demand — including an optional **directing** bridge to the [Seedance 2.0 Skill OS](#directing-layer-optional).
+The server exposes **7 verb tools** (~700 always-loaded tokens) instead of 20+ granular ones. Workflow knowledge lives in **4 companion skills** that the agent loads on demand — including an optional **directing** bridge to the [Seedance 2.0 Skill OS](#directing-layer-optional).
 
 > Tracks **venice-video-harness v2.3.x** (2026-05-20 sync): automatic Seedance R2V → Wan 2.7 keyframe pipeline for dialogue shots (CLAUDE.md rule 32; locks character identity into Wan 2.7 i2v's single keyframe and inline-TTS-generates the dialogue MP3 if absent), global no-overlap spoken-audio scheduling from measured clip durations (rules 35-36), per-shot reference re-anchoring to prevent cross-shot continuity drift (rule 37), Seedance scene-level multi-shot default, motion-classified routing (Wan 2.7 lip-sync for low/medium-motion dialogue), per-act music cues with crossfade + new time-varying `gainStops[]`, LUFS audio mix, FCPXML / Premiere xmeml / DaVinci-tuned timeline export, `insert-shot` mid-script, an upfront series-creation questionnaire (`audioStrategy`, `videoFamilyPreference`) that drives model selection + audio routing for the whole series, and the current model families: Seedance 2.0 (+ Fast variant), HappyHorse 1.1 (#1 blind-preference T2V+I2V; 7-language lip-sync, R2V up to 9 refs) + 1.0, Wan 2.7 (i2v / R2V / Spicy), Wan 2.6 (+ R2V), Runway Gen-4.5, DaVinci MagiHuman (30s lip-sync), PixVerse C1, Kling O3 4K / V3 4K, Grok Imagine (now with R2V), Sora 2 Pro (now 20s + true 1080p), Veo 3.1, LTX Video 2.0, Longcat. The MCP shells out to the harness CLI, so it picks up new harness commits automatically — only the tool surface / schemas / skills need to follow when the harness changes shape.
 
@@ -22,7 +22,7 @@ flowchart LR
     Venice["Venice API"]
     FS["output/&lt;series&gt;/...<br/>local filesystem"]
 
-    Client -->|"6 tools"| Server
+    Client -->|"7 tools"| Server
     Server -->|"child_process.spawn"| Harness
     Harness -->|"HTTPS"| Venice
     Harness -->|"reads/writes"| FS
@@ -35,11 +35,14 @@ flowchart LR
 | Tool | Actions | Long-running? |
 |---|---|---|
 | `series` | `new`, `list`, `set_aesthetic`, `explore_aesthetic` | no |
-| `character` | `add`, `audition_voices`, `lock` | sometimes |
+| `character` | `add`, `audition_voices`, `lock`, `generate_voice_reference` | sometimes |
+| `location` | `add`, `generate_references`, `list` | sometimes |
 | `episode` | `new`, `workshop`, `approve`, `storyboard`, `qa`, `qa_approve`, `fix_panel`, `insert_shot` | sometimes |
 | `media` | `generate_videos`, `override_audio`, `generate_music`, `generate_ambient`, `validate` | **yes** (progress) |
 | `assemble` | `assemble`, `produce`, `mix_audio`, `edit_transcribe`, `edit_render`, `edit_timeline`, `export_timeline` | **yes** (progress; `export_timeline` is a fast XML write) |
 | `inspect` | `list`, `series`, `episode`, `shot`, `models`, `voices` | no |
+
+**Locations** are first-class environment entities with generated reference images; tag shots with `location: <slug>` and the ref is folded into panels + video (Kling `scene_image_urls`; Seedance / HappyHorse `reference_image_urls` + `@ImageN`). **Voice references** (`character.generate_voice_reference`) attach a per-character voice-donor clip as `reference_audio_urls` (`@AudioN`) on dialogue shots that route to Seedance 2.0 R2V / HappyHorse 1.1 R2V, keeping the voice consistent across shots.
 
 For exact per-action arguments see `skills/venice-mcp-cookbook/SKILL.md`.
 
@@ -308,7 +311,7 @@ venice-video-mcp/
 │   ├── venice-video-mcp-update.js   # manual updater shim (git pull + build)
 │   └── install-skills.js            # skill installer shim
 ├── src/
-│   ├── server.ts                    # registers 6 tools, stdio transport, schedules update check
+│   ├── server.ts                    # registers 7 tools, stdio transport, schedules update check
 │   ├── update-check.ts              # GitHub releases poll, 24h cache, semver compare
 │   ├── config.ts                    # HARNESS_BIN / HARNESS_PATH resolution
 │   ├── harness.ts                   # spawn wrapper, stdout streaming
@@ -318,6 +321,7 @@ venice-video-mcp/
 │   └── tools/
 │       ├── series.ts
 │       ├── character.ts
+│       ├── location.ts
 │       ├── episode.ts
 │       ├── media.ts
 │       ├── assemble.ts              # also wraps the harness's edit-pipeline scripts
@@ -337,7 +341,7 @@ venice-video-mcp/
 
 ### Why a single-file-per-tool, action-discriminated design?
 
-- **Token frugality.** Six tools with one-line descriptions cost ~600 tokens vs ~3K for granular per-command tools. Skills carry the rest of the knowledge on demand.
+- **Token frugality.** Seven tools with one-line descriptions cost ~700 tokens vs ~3K for granular per-command tools. Skills carry the rest of the knowledge on demand.
 - **Schema correctness.** Each tool's input is a flat `z.object` with action enum + optional fields, so MCP clients see real JSON Schema (not empty objects). Internal validation runs through zod discriminated unions for full type safety.
 - **No coupling to harness internals.** Adding a new harness CLI command? Add a `case` in the right tool, an action to the schema, and a cookbook example. No SDK refactor, no harness changes.
 

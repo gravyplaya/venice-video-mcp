@@ -79,18 +79,12 @@ The Venice AI logo is two ornate skeleton keys crossed in an X with a chevron/op
 ### A10. Never pass logo PNGs as multi-edit references
 Multi-edit interprets reference images literally. A mostly-white/transparent logo PNG gets composited as an overlay rather than treated as a design pattern. **Describe logos in text prompts only.** Reserve multi-edit reference slots for character face/body and scene environment refs.
 
-### A11. Seedance 2.0 blocks face-bearing non-seedream images
-The harness defaults to Seedance 2.0 for video, which has a provenance gate: face-bearing input images must be produced by `seedream-v5-lite` / `seedream-v5-lite-edit`. Object/establishing/atmosphere images can come from any family.
-**What to watch for:** If `media.generate_videos` 4xx's with a Seedance error, check `inspect.shot` --- you'll see a `provenance.json` sidecar identifying the wrong-family image. Either re-generate that panel with seedream, or override `videoDefaults` in `series.json` to a non-Seedance family (Kling O3 + Veo).
+### A11. Seedance 2.0 face-image restriction — REMOVED (2026-07)
+Seedance 2.0 used to reject face-bearing input images that weren't produced by `seedream-v5-lite` / `seedream-v5-lite-edit`, and the harness ran a provenance gate to catch it. **Venice removed that restriction** — Seedance now accepts face-bearing images from **any** image family. The harness default image model for ALL panels (character and faceless) is now `nano-banana-2`, the pre-flight gate is a no-op, and `videoDefaults.seedanceCompatibility` is no longer auto-set (an explicit value is still read but does nothing meaningful). If you see an old series with `seedanceCompatibility` set, it's harmless.
 
-Harness ≥ 2.4.0 also writes a `shot-NNN.recipe.json` sidecar next to every generated asset — the full append-only log of every AI pass (model, prompt, seed, cfg, ref paths, role). When a shot looks wrong or a regen doesn't match the episode, read the recipe first: it tells you exactly which passes produced the current pixels and which are safe to redo (see pipeline skill, Recipe 3c).
+Harness still writes a `shot-NNN.recipe.json` sidecar next to every generated asset — the full append-only log of every AI pass (model, prompt, seed, cfg, ref paths, role). When a shot looks wrong or a regen doesn't match the episode, read the recipe first: it tells you exactly which passes produced the current pixels and which are safe to redo (see pipeline skill, Recipe 3c). The `provenance.json` sidecar (`hasFace`, models) is still written as metadata but nothing gates on it.
 
-The compatibility behaviour is controlled by `videoDefaults.seedanceCompatibility`:
-- `prompt` (default in TTY) — list offending files and wait for `fallback` or `launder`.
-- `fallback` (default in CI / non-TTY) — reroute that shot to `kling-o3-standard-reference-to-video` (R2V) or `veo3.1-fast-image-to-video` (i2v); other shots in the run stay on Seedance.
-- `launder` — re-render incompatible images through `seedream-v5-lite-edit` with a "preserve image" prompt, archive the originals, then continue with Seedance.
-
-`inspect.series` now surfaces this value; check it before retrying a Seedance failure.
+> The Seedance face **consent** attestation (HTTP 409 `needs_consent`) is a separate mechanism, still handled automatically at queue time — unrelated to the removed provenance gate.
 
 ### A12. Scene-level multi-shot can group consecutive shots into one unit
 v2.1.x default: the planner groups adjacent shots that share characters + location into a single Seedance multi-shot generation. Stdout reads `unit X of Y (covers shots A-B)`, not `shot N of M`. Consequences:
@@ -179,7 +173,7 @@ You'll see `Stage A/3:` / `Stage B/3:` / `Stage C/3:` lines in the streamed prog
 - **Per-series:** set `videoDefaults.seedanceKeyframeForWan: false` in `series.json`. Use when the user is cost-sensitive and accepts identity drift across the entire series.
 - **Per-run:** the harness CLI accepts `--no-seedance-keyframe`. The MCP doesn't expose this directly; the per-series flag plus a re-run achieves the same effect.
 
-**If the rule-32 pipeline errors:** The harness logs the failure and falls back to the existing panel-anchored single-pass render. Look for `⚠ Seedance R2V keyframe pipeline failed (...); falling back to panel-anchored single-pass render.` in stdout and a `seedanceKeyframe: { attempted: true, success: false, reason }` block in the shot's `.video.json`. Most common cause is a Stage A Seedance compatibility rejection --- run `inspect.series` to verify `videoDefaults.imageDefaults.generationModel` matches the Seedance face-bearing requirements (see A12).
+**If the rule-32 pipeline errors:** The harness logs the failure and falls back to the existing panel-anchored single-pass render. Look for `⚠ Seedance R2V keyframe pipeline failed (...); falling back to panel-anchored single-pass render.` in stdout and a `seedanceKeyframe: { attempted: true, success: false, reason }` block in the shot's `.video.json`. (The old Stage-A Seedance seedream face-compatibility rejection no longer happens — that restriction was removed, see A11.)
 
 For pre-2.2.0 harness installs, the manual two-stage workflow still works: see git history of this skill for the legacy steps.
 

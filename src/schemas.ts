@@ -104,12 +104,57 @@ export const CharacterLock = z.object({
   character: z.string().min(1),
   voiceId: z.string().min(1),
   voiceName: z.string().optional(),
+  voiceReference: z.string().optional().describe(
+    'Path to an operator-supplied voice-donor clip (wav/mp3). Imported and normalized to 2-15s, then used as reference_audio_urls (@AudioN) on Seedance/HappyHorse R2V dialogue shots so the character\'s voice stays consistent across shots.',
+  ),
+}).strict();
+
+export const CharacterGenerateVoiceReference = z.object({
+  action: z.literal('generate_voice_reference'),
+  project: Project,
+  character: z.string().min(1),
+  text: z.string().optional().describe('Spoken text to render (defaults to a neutral sample steered by the character voiceDescription)'),
+  voice: z.string().optional().describe('Named seed-audio voice (defaults to describe-in-prompt steering via voiceDescription)'),
+  speed: coerceFiniteNumber({ min: 0.5, max: 2 }).optional().describe('Playback speed 0.5-2'),
+  file: z.string().optional().describe('Import an operator-supplied clip verbatim instead of generating via seed-audio-1-0'),
+  model: z.string().optional().describe('Override the seed-audio model id (default seed-audio-1-0)'),
 }).strict();
 
 export const CharacterInput = z.discriminatedUnion('action', [
   CharacterAdd,
   CharacterAuditionVoices,
   CharacterLock,
+  CharacterGenerateVoiceReference,
+]);
+
+// ── Locations ──────────────────────────────────────────────────────────
+export const LocationAdd = z.object({
+  action: z.literal('add'),
+  project: Project,
+  name: z.string().min(1).describe('Location display name (e.g. "Sietch Workshop")'),
+  description: z.string().min(1).describe('Locked prose description of the environment — architecture, materials, set dressing, scale'),
+  lighting: z.string().optional().describe('Lighting notes carried into every panel prompt for this location (anti-pattern 7 — lighting consistency)'),
+  model: z.string().optional().describe('Image-generation model for the reference angles (default nano-banana-pro, faceless)'),
+  skipImages: z.boolean().default(false).describe('Skip reference image generation (define the location only)'),
+}).strict();
+
+export const LocationGenerate = z.object({
+  action: z.literal('generate_references'),
+  project: Project,
+  location: z.string().min(1).describe('Location slug or name'),
+  model: z.string().optional().describe('Override the image-generation model'),
+  force: z.boolean().default(false).describe('Regenerate angles that already exist (archives prior versions)'),
+}).strict();
+
+export const LocationList = z.object({
+  action: z.literal('list'),
+  project: Project,
+}).strict();
+
+export const LocationInput = z.discriminatedUnion('action', [
+  LocationAdd,
+  LocationGenerate,
+  LocationList,
 ]);
 
 export const EpisodeNew = z.object({
@@ -377,6 +422,7 @@ export const InspectInput = z.discriminatedUnion('action', [
 
 export type SeriesInputT = z.infer<typeof SeriesInput>;
 export type CharacterInputT = z.infer<typeof CharacterInput>;
+export type LocationInputT = z.infer<typeof LocationInput>;
 export type EpisodeInputT = z.infer<typeof EpisodeInput>;
 export type MediaInputT = z.infer<typeof MediaInput>;
 export type AssembleInputT = z.infer<typeof AssembleInput>;
@@ -399,8 +445,8 @@ export const SeriesShape = z.object({
 }).shape;
 
 export const CharacterShape = z.object({
-  action: z.enum(['add', 'audition_voices', 'lock'])
-    .describe('Action: add=create character, audition_voices=audition Venice voices, lock=lock chosen voice'),
+  action: z.enum(['add', 'audition_voices', 'lock', 'generate_voice_reference'])
+    .describe('Action: add=create character, audition_voices=audition Venice voices, lock=lock chosen voice, generate_voice_reference=make/import a voice-donor clip (reference_audio_urls @AudioN) for Seedance/HappyHorse R2V dialogue consistency'),
   project: Project.describe('series slug or path'),
   name: z.string().optional().describe('(add) character name'),
   gender: z.enum(['male', 'female', 'other']).optional().describe('(add) gender'),
@@ -410,11 +456,30 @@ export const CharacterShape = z.object({
   voiceDesc: z.string().optional().describe('(add) voice description'),
   baseTraits: z.string().optional().describe('(add) custom base traits override'),
   skipImages: z.boolean().optional().describe('(add) skip reference image generation'),
-  character: z.string().optional().describe('(audition_voices, lock) character name'),
+  character: z.string().optional().describe('(audition_voices, lock, generate_voice_reference) character name'),
   sampleText: z.string().optional().describe('(audition_voices) sample line'),
   count: z.coerce.number().int().min(1).max(10).optional().describe('(audition_voices) candidate count, default 5'),
   voiceId: z.string().optional().describe('(lock) Venice voice ID'),
   voiceName: z.string().optional().describe('(lock) display name'),
+  voiceReference: z.string().optional().describe('(lock) path to an operator-supplied voice-donor clip (wav/mp3) → reference_audio_urls'),
+  text: z.string().optional().describe('(generate_voice_reference) spoken text to render, defaults to a neutral sample'),
+  voice: z.string().optional().describe('(generate_voice_reference) named seed-audio voice, defaults to describe-in-prompt'),
+  speed: z.coerce.number().optional().describe('(generate_voice_reference) playback speed 0.5-2'),
+  file: z.string().optional().describe('(generate_voice_reference) import a clip verbatim instead of generating'),
+  model: z.string().optional().describe('(generate_voice_reference) seed-audio model id override'),
+}).shape;
+
+export const LocationShape = z.object({
+  action: z.enum(['add', 'generate_references', 'list'])
+    .describe('Action: add=define a location + generate reference images (wide/medium/detail), generate_references=(re)generate a location\'s refs, list=list locations'),
+  project: Project.describe('series slug or path'),
+  name: z.string().optional().describe('(add) location display name'),
+  description: z.string().optional().describe('(add) locked environment description'),
+  lighting: z.string().optional().describe('(add) lighting notes for consistency across shots'),
+  location: z.string().optional().describe('(generate_references) location slug or name'),
+  model: z.string().optional().describe('(add, generate_references) image-generation model, default nano-banana-pro'),
+  skipImages: z.boolean().optional().describe('(add) skip reference image generation'),
+  force: z.boolean().optional().describe('(generate_references) regenerate existing angles'),
 }).shape;
 
 export const EpisodeShape = z.object({
