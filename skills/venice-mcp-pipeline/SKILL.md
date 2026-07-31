@@ -38,17 +38,21 @@ Ask the user:
 
 > "Which video model family fits the look you want?
 >   - **(a) Seedance 2.0** (default) — strong R2V identity anchoring, 4-15s native durations, mature audio generation, photoreal-leaning. The `seedance-2-0-fast-*` variants are cheaper / quicker for the same family.
->   - **(b) HappyHorse 1.1** — Alibaba's #1 blind-preference model (T2V + I2V). Joint single-pass video+audio with phoneme-level lip-sync in 7 languages (EN, Mandarin, Cantonese, JA, KO, DE, FR), and R2V with up to 9 reference images. Best for talking characters and multilingual localization; SFW/commercial-leaning (for mature work prefer Seedance or Wan). The `happyhorse` family routes here.
->   - **(c) Grok Imagine** — atmosphere-rich, in-family R2V (added 2026-05). R2V durations are stepped at 5s / 8s / 10s only; the duration preflight will catch any shot scripted outside that ladder.
->   - **(d) Kling O3** — best for stylized, illustrated, anime, or non-photoreal aesthetics. Accepts non-seedream input images.
+>   - **(b) MiniMax H3** — the open-weight omni-modal model (added 2026-07-31). Every render is 2K with native stereo audio, at roughly a third the per-second cost of the other families, and R2V takes the same 9-image reference stack as Seedance. Two constraints to plan around: 2K is the *only* resolution, so there is no cheap draft tier and every take is a finish-quality spend; and the duration ladder starts at 5s, so any 3-4s beat has to be re-scripted or routed to another family.
+>   - **(c) HappyHorse 1.1** — Alibaba's #1 blind-preference model (T2V + I2V). Joint single-pass video+audio with phoneme-level lip-sync in 7 languages (EN, Mandarin, Cantonese, JA, KO, DE, FR), and R2V with up to 9 reference images. Best for talking characters and multilingual localization; SFW/commercial-leaning (for mature work prefer Seedance or Wan). The `happyhorse` family routes here.
+>   - **(d) Grok Imagine** — atmosphere-rich, in-family R2V (added 2026-05). R2V durations are stepped at 5s / 8s / 10s only; the duration preflight will catch any shot scripted outside that ladder.
+>   - **(e) Kling O3** — best for stylized, illustrated, anime, or non-photoreal aesthetics. Accepts non-seedream input images.
 >   - **(?) Not sure** — pick `auto` and decide later."
 
 Map their answer to `series.new videoFamilyPreference`:
 - (a) → `'seedance'` (or omit / `'auto'`)
-- (b) → `'happyhorse'`
-- (c) → `'grok-imagine'`
-- (d) → `'kling-o3'`
+- (b) → `'minimax-h3'`
+- (c) → `'happyhorse'`
+- (d) → `'grok-imagine'`
+- (e) → `'kling-o3'`
 - (?) → `'auto'`
+
+If they pick MiniMax H3, two things to plan for. Write the beat script on a 5-15s grid from the start — the duration preflight rejects sub-5s shots before anything is queued, but catching it at script time saves a rewrite. And keep the storyboard blocking plate in the reference stack for every shot: H3 R2V weighs reference aspect when deciding output orientation, so a character-only stack of 1:1 sheets can come back non-16:9 even with `aspect_ratio: '16:9'` set. Check the first-frame contact sheet before assembling.
 
 This swaps the series's default `actionModel` / `atmosphereModel` / `characterConsistencyModel`. `lipSyncModel` stays on Wan 2.7 regardless — it's the only Venice model with proper lip-sync today, so the answer to Q1 still works.
 

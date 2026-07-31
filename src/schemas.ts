@@ -39,12 +39,13 @@ export const SeriesNew = z.object({
     '"lip-sync" — Venice TTS renders each line, Wan 2.7 i2v lip-syncs the mouth (best when a character speaks many times so a single voice persists; assemble-episode defaults dialogueReplace=true). ' +
     '"narrator-vo" — the speaker is a NARRATOR / voice-over only, no on-camera mouth movement (auto-sets audioMix.suppressModelNarration=true; assemble-episode defaults dialogueReplace=true and nativeVolume=0 so a competing AI narrator can\'t fight the TTS).',
   ),
-  videoFamilyPreference: z.enum(['auto', 'seedance', 'happyhorse', 'grok-imagine', 'kling-o3']).optional().describe(
+  videoFamilyPreference: z.enum(['auto', 'seedance', 'happyhorse', 'minimax-h3', 'grok-imagine', 'kling-o3']).optional().describe(
     'Preferred video model family for action/atmosphere/character shots. Ask BEFORE calling series.new. ' +
     'Swaps actionModel/atmosphereModel/characterConsistencyModel; lipSyncModel stays on Wan 2.7 regardless. ' +
     '"auto" (default) — Seedance 2.0 across the board. ' +
     '"seedance" — explicit Seedance 2.0 (same as auto, but persisted). ' +
     '"happyhorse" — HappyHorse 1.1 (Alibaba, #1 blind-preference T2V + I2V): joint single-pass video+audio, 7-language phoneme lip-sync, R2V with up to 9 refs. Best for talking characters + multilingual localization (SFW-leaning). ' +
+    '"minimax-h3" — MiniMax H3, the open-weight omni-modal model: every render is 2K with native stereo audio at roughly a third the per-second cost, R2V takes up to 9 refs. Two constraints to plan around: 2K is the ONLY resolution (no cheap draft tier, so each take is a finish-quality spend) and the duration ladder starts at 5s, so 3-4s beats must be re-scripted or routed to another family. ' +
     '"grok-imagine" — Grok Imagine i2v + R2V (R2V durations stepped at 5s/8s/10s only; the duration preflight will catch off-ladder shots). ' +
     '"kling-o3" — Kling O3 Standard for stylized / illustrated aesthetics.',
   ),
