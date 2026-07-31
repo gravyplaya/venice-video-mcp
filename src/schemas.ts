@@ -35,13 +35,13 @@ export const SeriesNew = z.object({
   // The pipeline skill enforces the ask-first contract.
   audioStrategy: z.enum(['native', 'lip-sync', 'narrator-vo']).optional().describe(
     'How dialogue reaches the final mix. Ask BEFORE calling series.new. ' +
-    '"native" — the video model speaks dialogue in-frame (default; best when characters speak only once or twice; assemble-episode keeps dialogueReplace=false). ' +
-    '"lip-sync" — Venice TTS renders each line, Wan 2.7 i2v lip-syncs the mouth (best when a character speaks many times so a single voice persists; assemble-episode defaults dialogueReplace=true). ' +
+    '"native" (default) — Seedance generates the dialogue in-frame, using each character\'s voice-donor clip (reference_audio_urls / @AudioN) to hold timbre, accent, and pacing across shots. Mouth movement is natively generated, not synced to a supplied recording. Keeps shots on R2V, allows native multi-shot bundling, and assemble-episode keeps dialogueReplace=false. ' +
+    '"lip-sync" — Venice TTS renders each line and Wan 2.7 i2v drives the mouth from that exact audio file. Only pick this when delivery must match a specific recording (cloned voice, scripted read, localized dub): it forfeits R2V reference anchoring and doubles per-shot cost via the Seedance-keyframe pipeline. assemble-episode defaults dialogueReplace=true. ' +
     '"narrator-vo" — the speaker is a NARRATOR / voice-over only, no on-camera mouth movement (auto-sets audioMix.suppressModelNarration=true; assemble-episode defaults dialogueReplace=true and nativeVolume=0 so a competing AI narrator can\'t fight the TTS).',
   ),
   videoFamilyPreference: z.enum(['auto', 'seedance', 'happyhorse', 'minimax-h3', 'grok-imagine', 'kling-o3']).optional().describe(
     'Preferred video model family for action/atmosphere/character shots. Ask BEFORE calling series.new. ' +
-    'Swaps actionModel/atmosphereModel/characterConsistencyModel; lipSyncModel stays on Wan 2.7 regardless. ' +
+    'Swaps actionModel/atmosphereModel/characterConsistencyModel; lipSyncModel stays on Wan 2.7 regardless, and is only used when audioStrategy is "lip-sync". ' +
     '"auto" (default) — Seedance 2.0 across the board. ' +
     '"seedance" — explicit Seedance 2.0 (same as auto, but persisted). ' +
     '"happyhorse" — HappyHorse 1.1 (Alibaba, #1 blind-preference T2V + I2V): joint single-pass video+audio, 7-language phoneme lip-sync, R2V with up to 9 refs. Best for talking characters + multilingual localization (SFW-leaning). ' +

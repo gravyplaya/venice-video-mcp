@@ -18,8 +18,8 @@ A 30-second conversation at series-creation time eliminates an entire class of e
 Ask the user:
 
 > "How will characters talk in this episode?
->   - **(a) Native voices** — let the video model speak the lines on-camera. Best when characters speak only once or twice each.
->   - **(b) Lip-sync** — render the dialogue with Venice TTS, then lip-sync each character's mouth to the audio (Wan 2.7). Best when a character speaks many times so a single voice persists across the episode, or when you need accent / language control.
+>   - **(a) Native dialogue** (recommended) — Seedance generates the speech in-frame. Each character gets a short voice-reference clip so their voice stays the same across shots, but the line itself is model-generated.
+>   - **(b) Exact lip-sync** — Venice TTS renders each line and Wan 2.7 drives the character's mouth from that exact recording. Pick this only when the delivery has to match a specific take: a cloned or branded voice, a scripted read, a localized dub.
 >   - **(c) Narrator voice-over** — a single narrator speaks over the visuals; no character mouths move. (Nature documentaries, mock-Audubon, true-crime-style)."
 
 Map their answer to `series.new audioStrategy`:
@@ -27,9 +27,11 @@ Map their answer to `series.new audioStrategy`:
 - (b) → `audioStrategy: 'lip-sync'`
 - (c) → `audioStrategy: 'narrator-vo'`
 
+**Do not conflate the two audio-reference paths.** Native sends a *voice-donor* clip (`reference_audio_urls` / `@AudioN`) that locks timbre, accent, and pacing while Seedance still generates the dialogue — it is not deterministic against a supplied recording. Only lip-sync sends the exact speech file (`audio_url`) that drives the mouth. Never describe the donor clip as "the dialogue audio file."
+
 What this controls automatically:
-- `'native'` keeps `assemble.assemble dialogueReplace: false` and lets Seedance speak.
-- `'lip-sync'` flips `assemble.assemble dialogueReplace` default to `true` (Venice TTS) and routes face-visible low/medium-motion dialogue shots through Wan 2.7 for actual lip-sync. Character `voiceDesc` becomes the TTS voice spec, not just a hint to Seedance.
+- `'native'` keeps `assemble.assemble dialogueReplace: false`, lets Seedance speak, and keeps every dialogue shot on R2V (full reference stack, native multi-shot bundling still allowed).
+- `'lip-sync'` flips `assemble.assemble dialogueReplace` default to `true` (Venice TTS) and is the **only** strategy that routes face-visible low/medium-motion single-speaker dialogue shots through Wan 2.7. Character `voiceDesc` becomes the TTS voice spec, not just a hint to Seedance. Those shots render as singles and cost roughly double (Seedance keyframe pass + Wan render), so don't select it by default.
 - `'narrator-vo'` sets `audioMix.suppressModelNarration: true` so Seedance is queued with `audio: false` on every dialogue shot (no competing AI narrator); flips `dialogueReplace` default to `true` and `nativeVolume` default to `0`. This is the configuration that would have prevented every double-narration version of the PNW field-guide.
 
 ### Question 2 — Which video model family?
@@ -54,7 +56,7 @@ Map their answer to `series.new videoFamilyPreference`:
 
 If they pick MiniMax H3, two things to plan for. Write the beat script on a 5-15s grid from the start — the duration preflight rejects sub-5s shots before anything is queued, but catching it at script time saves a rewrite. And keep the storyboard blocking plate in the reference stack for every shot: H3 R2V weighs reference aspect when deciding output orientation, so a character-only stack of 1:1 sheets can come back non-16:9 even with `aspect_ratio: '16:9'` set. Check the first-frame contact sheet before assembling.
 
-This swaps the series's default `actionModel` / `atmosphereModel` / `characterConsistencyModel`. `lipSyncModel` stays on Wan 2.7 regardless — it's the only Venice model with proper lip-sync today, so the answer to Q1 still works.
+This swaps the series's default `actionModel` / `atmosphereModel` / `characterConsistencyModel`. `lipSyncModel` stays on Wan 2.7 regardless — it's the only Venice model that syncs a mouth to a supplied recording — and it goes unused unless Q1 was answered `lip-sync`.
 
 **Other families in the registry** that the questionnaire intentionally doesn't expose (override via direct edit of `series.json videoDefaults` if needed):
 
@@ -106,7 +108,7 @@ For failures, gotchas, and anti-patterns see **venice-mcp-troubleshooting**.
 Several behaviours the MCP relied on the agent to orchestrate are now automatic inside the harness. You don't have to script them — but you should know they're running so you can interpret stdout:
 
 - **Seedance scene-level multi-shot.** When adjacent shots share the same characters and location, the harness now plans them as a single Seedance multi-shot generation by default. You won't see "shot 5 of 12" — you'll see "unit 3 of 8 (covers shots 5-6)". This is fine; identity stays anchored across the unit.
-- **Motion-classified video routing.** Each shot's `motion` field (`low | medium | high`) drives the planner. Low/medium-motion dialogue shots with a visible face route to `wan-2-7-image-to-video` for lip-sync; high-motion or face-occluded shots stay on the R2V model. `episode.insert_shot` lets you set `motion` directly. To change motion on an existing shot, edit `script.json`. **Automatic identity lock (harness ≥ 2.2.0):** Wan 2.7 i2v has no `reference_image_urls`, so its single keyframe is its only identity anchor. `media.generate_videos` now auto-renders a Seedance R2V identity-lock pass first, extracts frame 1, and uses it as the Wan 2.7 keyframe + the dialogue MP3 (auto-TTS-generated if missing) as `audio_url`. ~$0.85/shot for matching shots, reported in the start-of-run summary. See troubleshooting **A27** for opt-out levers (`videoDefaults.seedanceKeyframeForWan: false` series-wide, `disableSeedanceKeyframe: true` per shot).
+- **Motion-classified video routing.** Each shot's `motion` field (`low | medium | high`) drives the planner **when the series runs `audioStrategy: 'lip-sync'`**: low/medium-motion dialogue shots with a visible face route to `wan-2-7-image-to-video`, while high-motion or face-occluded shots stay on the R2V model. Under `native` or `narrator-vo`, dialogue shots never leave the R2V model no matter their motion. `episode.insert_shot` lets you set `motion` directly. To change motion on an existing shot, edit `script.json`. **Automatic identity lock (harness ≥ 2.2.0):** Wan 2.7 i2v has no `reference_image_urls`, so its single keyframe is its only identity anchor. `media.generate_videos` now auto-renders a Seedance R2V identity-lock pass first, extracts frame 1, and uses it as the Wan 2.7 keyframe + the dialogue MP3 (auto-TTS-generated if missing) as `audio_url`. ~$0.85/shot for matching shots, reported in the start-of-run summary. See troubleshooting **A27** for opt-out levers (`videoDefaults.seedanceKeyframeForWan: false` series-wide, `disableSeedanceKeyframe: true` per shot).
 - **Per-act music cues with crossfade.** If the episode script has a `musicCues[]` array (manually authored or via `episode.workshop` for series that opt in), `assemble.assemble` / `produce` will render and crossfade them automatically. The single-bed `media.generate_music` path still works — when both exist, the cues win.
 - **LUFS audio mix.** The assembler now runs a final-pass to -16 LUFS integrated / -1 dBTP true peak by default. SFX clips are trimmed to ≤2s with a 0.3s fade-out. Episode-level overrides go in `script.audioMix`.
 - **Wan 2.7 audio pre-flight.** When a shot's `audioUrl` is shorter than 3 seconds, the harness pads it to 3s automatically (Wan 2.7 returns 400 otherwise). You'll see a "padded audio_url N.NNs -> 3.00s" line in stdout.
@@ -309,7 +311,7 @@ Heads-up on stdout patterns the harness emits in v2.1.x that you should NOT mist
 
 - `unit X of Y (covers shots A-B)` — scene-level multi-shot generation; one Venice call covers multiple consecutive shots.
 - `padded audio_url N.NNs -> 3.00s` — Wan 2.7 audio pre-flight padded a short clip.
-- `routing shot N to wan-2-7-image-to-video` — motion classifier picked the lip-sync model for that shot.
+- `routing shot N to wan-2-7-image-to-video` — the series is on `audioStrategy: 'lip-sync'` and the motion classifier picked the exact-lip-sync model for that shot. Seeing this on a `native` series is a bug.
 - `LUFS final pass: integrated -X.X / true-peak -Y.Y` — assembler is normalising to -16 LUFS.
 
 Don't poll `inspect` during a long-running call --- you already get progress notifications.

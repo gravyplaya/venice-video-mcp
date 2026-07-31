@@ -13,7 +13,7 @@ Conventions:
 - `episode` and `shot` are integers (1-based).
 - Coercion is enabled: passing `"1"` for a number works, but prefer real numbers.
 
-Defaults reflect venice-video-harness v2.1.x: video defaults are Seedance 2.0 i2v / R2V with auto-fallback to Kling O3 for 3+ character scenes; dialogue shots with `motion: 'low' | 'medium'` and a visible face route to `wan-2-7-image-to-video` for lip-sync. Image + edit defaults are `nano-banana-2` / `nano-banana-2-edit` for ALL panels — the old seedream-only requirement for face-bearing Seedance inputs was removed (2026-07). `gpt-image-2` / `nano-banana-pro` (and their `-edit` variants) are valid alternatives.
+Defaults reflect venice-video-harness v2.1.x: video defaults are Seedance 2.0 i2v / R2V with auto-fallback to Kling O3 for 3+ character scenes; dialogue shots with `motion: 'low' | 'medium'` and a visible face route to `wan-2-7-image-to-video` for exact lip-sync, but only when the series was created with `audioStrategy: 'lip-sync'` — otherwise they stay on the R2V family and Seedance speaks the line itself. Image + edit defaults are `nano-banana-2` / `nano-banana-2-edit` for ALL panels — the old seedream-only requirement for face-bearing Seedance inputs was removed (2026-07). `gpt-image-2` / `nano-banana-pro` (and their `-edit` variants) are valid alternatives.
 
 ---
 
@@ -36,8 +36,8 @@ Defaults reflect venice-video-harness v2.1.x: video defaults are Seedance 2.0 i2
 ```
 
 `audioStrategy` (optional, ask first):
-- `"native"` — video model speaks the dialogue in-frame. Default. Best when characters say 1-2 lines each. `assemble.assemble` keeps `dialogueReplace: false`.
-- `"lip-sync"` — Venice TTS renders each line, Wan 2.7 lip-syncs the mouth. Best when characters speak many times so a single TTS voice persists. `assemble.assemble` defaults `dialogueReplace: true`.
+- `"native"` — Seedance generates the dialogue in-frame, holding each character's voice steady through a voice-donor clip (`reference_audio_urls` / `@AudioN`). Default, and the right answer for most work: shots stay on R2V and dialogue beats can still bundle into native multi-shot generations. `assemble.assemble` keeps `dialogueReplace: false`.
+- `"lip-sync"` — Venice TTS renders each line and Wan 2.7 drives the mouth from that exact file. The **only** strategy that routes anything to Wan. Pick it when the delivery must match a specific recording (cloned voice, scripted read, localized dub); it costs roughly double per shot and forces those beats to render as singles. `assemble.assemble` defaults `dialogueReplace: true`.
 - `"narrator-vo"` — voice-over only (NARRATOR), no on-camera mouths. Auto-sets `audioMix.suppressModelNarration: true` so Seedance gets `audio: false` for every dialogue shot, and `assemble.assemble` defaults `dialogueReplace: true` + `nativeVolume: 0`.
 
 `videoFamilyPreference` (optional, ask first):
@@ -48,7 +48,7 @@ Defaults reflect venice-video-harness v2.1.x: video defaults are Seedance 2.0 i2
 - `"grok-imagine"` — Grok Imagine i2v + R2V (R2V durations stepped at 5s / 8s / 10s only). Family stays in-family for character consistency.
 - `"kling-o3"` — Kling O3 Standard everywhere. Best for stylized / illustrated aesthetics.
 
-`lipSyncModel` stays on Wan 2.7 regardless of family — it's the only Venice model with proper lip-sync today.
+`lipSyncModel` stays on Wan 2.7 regardless of family — it's the only Venice model that syncs a mouth to a supplied recording — and it goes unused unless `audioStrategy` is `"lip-sync"`.
 
 ### `series.list`
 ```json

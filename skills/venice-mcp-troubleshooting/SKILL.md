@@ -94,14 +94,14 @@ v2.1.x default: the planner groups adjacent shots that share characters + locati
 
 To disable scene-level grouping for a specific shot, set `mustStaySingle: true` in `script.json` for that shot.
 
-### A13. Motion-classified routing changes model per shot
-A dialogue shot with `motion: 'low' | 'medium'` and `faceVisible: true` routes to `wan-2-7-image-to-video` for lip-sync. High-motion or face-occluded shots stay on the R2V model. Implications:
+### A13. Motion-classified routing changes model per shot (exact lip-sync only)
+**This only applies to series created with `audioStrategy: 'lip-sync'`.** There, a dialogue shot with `motion: 'low' | 'medium'` and `faceVisible: true` routes to `wan-2-7-image-to-video`, while high-motion or face-occluded shots stay on the R2V model. Under `native` or `narrator-vo`, dialogue shots never leave the R2V family regardless of motion — Seedance speaks the line itself and the character's voice-donor clip holds the voice. Implications:
 - The model used in stdout will not always match `series.videoDefaults.actionModel`.
 - Wan 2.7 needs an `audioUrl` ≥ 3s --- the harness pads short clips automatically but a missing `audioUrl` falls back to R2V silently.
 - Wan 2.7 i2v has **no** `reference_image_urls` --- its single `image_url` is the only identity anchor. Harness ≥ 2.2.0 auto-keyframes from a Seedance R2V pass so identity stays locked; see A27 for the automatic pipeline and its opt-out levers.
 - To force a specific shot back to the default model, set `motion: 'high'` or `faceVisible: false` in `script.json`.
 
-Override the lip-sync model globally via `videoDefaults.lipSyncModel` in `series.json`.
+Override the lip-sync model globally via `videoDefaults.lipSyncModel` in `series.json`. Note that setting `lipSyncModel` alone routes nothing — every series carries one by default, and the strategy is what activates it. If you see `routing shot N to wan-2-7-image-to-video` on a `native` series, that's a bug, not a motion classification.
 
 ## Editing-pipeline anti-patterns
 
@@ -163,8 +163,8 @@ If no `ambient-*.mp3` files are present in `<episodeDir>/audio/`, the per-shot m
 
 You'll see `Stage A/3:` / `Stage B/3:` / `Stage C/3:` lines in the streamed progress output and a `seedanceKeyframe` block in each shot's `.video.json`.
 
-**Apply when (planner decides automatically):** Single-character dialogue, visible face, `motion` is `low | medium`.
-**Skip when (planner decides automatically):** No dialogue, `motion: 'high'`, `faceVisible: false`, NARRATOR / V.O., or ≥2 speakers (Wan 2.7 R2V `per_reference_audio` handles those).
+**Apply when (planner decides automatically):** The series runs `audioStrategy: 'lip-sync'` AND the shot is single-character dialogue with a visible face and `motion` of `low | medium`.
+**Skip when (planner decides automatically):** The series runs `native` or `narrator-vo` audio (Seedance speaks the line itself — no Wan render and no keyframe pass to pay for), no dialogue, `motion: 'high'`, `faceVisible: false`, NARRATOR / V.O., or ≥2 speakers (Wan 2.7 R2V `per_reference_audio` handles those).
 
 **Cost:** ~$0.85 per matching shot total (Seedance R2V + Wan 2.7 i2v --- roughly 2× the single-pass Wan price). `media.generate_videos` reports the per-episode count at start.
 
