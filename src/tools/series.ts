@@ -17,6 +17,7 @@ export async function handleSeries(input: SeriesInputT): Promise<ToolContent> {
         // Upfront questionnaire answers — see schemas.ts SeriesNew.
         if (input.audioStrategy) args.push('--audio-strategy', input.audioStrategy);
         if (input.videoFamilyPreference) args.push('--video-family', input.videoFamilyPreference);
+        if (input.intelligenceModel) args.push('--intelligence', input.intelligenceModel);
 
         const r = await runHarness(args);
         if (!r.ok) return fromHarness(r, 'new-series failed');
@@ -27,6 +28,7 @@ export async function handleSeries(input: SeriesInputT): Promise<ToolContent> {
             slug,
             ...(input.audioStrategy ? { audioStrategy: input.audioStrategy } : {}),
             ...(input.videoFamilyPreference ? { videoFamilyPreference: input.videoFamilyPreference } : {}),
+            ...(input.intelligenceModel ? { intelligenceModel: input.intelligenceModel } : {}),
           },
         });
       }

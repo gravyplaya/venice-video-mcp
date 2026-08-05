@@ -36,18 +36,36 @@ export const SeriesNew = z.object({
   audioStrategy: z.enum(['native', 'lip-sync', 'narrator-vo']).optional().describe(
     'How dialogue reaches the final mix. Ask BEFORE calling series.new. ' +
     '"native" (default) — Seedance generates the dialogue in-frame, using each character\'s voice-donor clip (reference_audio_urls / @AudioN) to hold timbre, accent, and pacing across shots. Mouth movement is natively generated, not synced to a supplied recording. Keeps shots on R2V, allows native multi-shot bundling, and assemble-episode keeps dialogueReplace=false. ' +
-    '"lip-sync" — Venice TTS renders each line and Wan 2.7 i2v drives the mouth from that exact audio file. Only pick this when delivery must match a specific recording (cloned voice, scripted read, localized dub): it forfeits R2V reference anchoring and doubles per-shot cost via the Seedance-keyframe pipeline. assemble-episode defaults dialogueReplace=true. ' +
+    '"lip-sync" — Venice TTS renders each line, the video model receives it as audio_url, and the mouth follows that exact recording. Pick this when delivery must match a specific recording (cloned voice, scripted read, localized dub). Cost depends on the family: Seedance and MiniMax H3 do it in-family on their R2V lane, keeping reference anchoring at normal cost; every other family routes out to Wan 2.7 i2v, which forfeits R2V reference anchoring and doubles per-shot cost via the Seedance-keyframe pipeline. assemble-episode defaults dialogueReplace=true. ' +
     '"narrator-vo" — the speaker is a NARRATOR / voice-over only, no on-camera mouth movement (auto-sets audioMix.suppressModelNarration=true; assemble-episode defaults dialogueReplace=true and nativeVolume=0 so a competing AI narrator can\'t fight the TTS).',
   ),
-  videoFamilyPreference: z.enum(['auto', 'seedance', 'happyhorse', 'minimax-h3', 'grok-imagine', 'kling-o3']).optional().describe(
+  videoFamilyPreference: z.enum(['auto', 'seedance', 'wan-3-0', 'happyhorse', 'minimax-h3', 'grok-imagine', 'kling-o3']).optional().describe(
     'Preferred video model family for action/atmosphere/character shots. Ask BEFORE calling series.new. ' +
-    'Swaps actionModel/atmosphereModel/characterConsistencyModel; lipSyncModel stays on Wan 2.7 regardless, and is only used when audioStrategy is "lip-sync". ' +
+    'Swaps actionModel/atmosphereModel/characterConsistencyModel, and picks lipSyncModel (only used when audioStrategy is "lip-sync"): Seedance and MiniMax H3 stay in-family on their R2V lane, every other family falls back to Wan 2.7 i2v. ' +
     '"auto" (default) — Seedance 2.0 across the board. ' +
     '"seedance" — explicit Seedance 2.0 (same as auto, but persisted). ' +
+    '"wan-3-0" — Wan 3.0: the only family that renders past 15s (5/10/15/20/25/30s at 480p/720p/1080p), native audio always on, R2V takes up to 9 refs. It accepts no audio input, so exact lip-sync leaves the family. ' +
     '"happyhorse" — HappyHorse 1.1 (Alibaba, #1 blind-preference T2V + I2V): joint single-pass video+audio, 7-language phoneme lip-sync, R2V with up to 9 refs. Best for talking characters + multilingual localization (SFW-leaning). ' +
     '"minimax-h3" — MiniMax H3, the open-weight omni-modal model: every render is 2K with native stereo audio at roughly a third the per-second cost, R2V takes up to 9 refs. Two constraints to plan around: 2K is the ONLY resolution (no cheap draft tier, so each take is a finish-quality spend) and the duration ladder starts at 5s, so 3-4s beats must be re-scripted or routed to another family. ' +
     '"grok-imagine" — Grok Imagine i2v + R2V (R2V durations stepped at 5s/8s/10s only; the duration preflight will catch off-ladder shots). ' +
     '"kling-o3" — Kling O3 Standard for stylized / illustrated aesthetics.',
+  ),
+  intelligenceModel: z.enum([
+    'kimi-k3', 'zai-org-glm-5-2', 'grok-4-5',
+    'claude-fable-5', 'claude-opus-5', 'openai-gpt-56-sol', 'qwen-3-8-max',
+  ]).optional().describe(
+    'The reasoning model behind the project — it develops the workshop, writes the shot script, and reads rendered panels back during storyboard QA. ' +
+    'It generates none of the pixels or audio; it decides what gets made. Ask BEFORE calling series.new when the operator has a preference. ' +
+    'Private tier (the prompt stays on Venice infrastructure): ' +
+    '"kimi-k3" (default) — reads panels as well as it writes, so one model covers the whole pipeline. ' +
+    '"zai-org-glm-5-2" — cheapest reasoning model, text only, so storyboard QA is paired to grok-4-5 to stay in tier; needs a second attempt at JSON about one time in three. ' +
+    '"grok-4-5" — reads panels, cheapest output among the private vision models. ' +
+    'Anonymized tier (routed to an external provider with identifying metadata stripped — the prompt leaves Venice): ' +
+    '"claude-fable-5" — tuned for narrative, and by far the most expensive. ' +
+    '"claude-opus-5" — holds long structure across a full treatment. ' +
+    '"openai-gpt-56-sol" — follows an exact output schema closely. ' +
+    '"qwen-3-8-max" — cheapest anonymized option, and reads panels. ' +
+    'A text-only choice is always paired with a vision model from the SAME privacy tier; the pairing never downgrades privacy.',
   ),
 }).strict();
 

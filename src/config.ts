@@ -13,37 +13,37 @@ let cachedConfig: HarnessConfig | null = null;
 
 export function getHarnessConfig(): HarnessConfig {
   if (cachedConfig) return cachedConfig;
+  cachedConfig = resolveHarnessConfig();
+  // Resolution used to be silent, so a config that set only HARNESS_PATH could
+  // run a stale global `venice-video` on PATH without any signal. Naming the
+  // resolved binary once on stderr (JSON-RPC owns stdout) makes that visible.
+  process.stderr.write(`[venice-video-mcp] harness: ${cachedConfig.bin} ${cachedConfig.args.join(' ')}\n`);
+  return cachedConfig;
+}
 
+/**
+ * Pure resolution of the harness binary from the environment. Exported for
+ * tests; production code goes through `getHarnessConfig`, which caches and logs.
+ */
+export function resolveHarnessConfig(): HarnessConfig {
+  const cwd = getWorkspace();
+
+  // 1. An explicit binary path wins outright.
   const explicitBin = process.env.HARNESS_BIN?.trim();
   if (explicitBin && existsSync(explicitBin)) {
-    cachedConfig = {
-      bin: 'node',
-      args: [explicitBin],
-      cwd: getWorkspace(),
-    };
-    return cachedConfig;
+    return { bin: 'node', args: [explicitBin], cwd };
   }
 
-  const linkedBin = resolveOnPath('venice-video');
-  if (linkedBin) {
-    cachedConfig = {
-      bin: linkedBin,
-      args: [],
-      cwd: getWorkspace(),
-    };
-    return cachedConfig;
-  }
-
+  // 2. An explicit HARNESS_PATH outranks whatever `venice-video` happens to be
+  //    on PATH. Setting it is a statement of intent, and an ambient global
+  //    install (often a stale, separately-versioned copy) must not silently
+  //    override it. If it is set but not built, that is a setup error worth
+  //    surfacing, not a reason to fall through to a different binary.
   const harnessPath = process.env.HARNESS_PATH?.trim();
   if (harnessPath) {
     const distEntry = join(harnessPath, 'dist/mini-drama/cli.js');
     if (existsSync(distEntry)) {
-      cachedConfig = {
-        bin: 'node',
-        args: [distEntry],
-        cwd: getWorkspace(),
-      };
-      return cachedConfig;
+      return { bin: 'node', args: [distEntry], cwd };
     }
     throw new Error(
       `HARNESS_PATH is set to "${harnessPath}" but ${distEntry} does not exist. ` +
@@ -51,11 +51,17 @@ export function getHarnessConfig(): HarnessConfig {
     );
   }
 
+  // 3. Fall back to a `venice-video` on PATH (e.g. a global install or npm link).
+  const linkedBin = resolveOnPath('venice-video');
+  if (linkedBin) {
+    return { bin: linkedBin, args: [], cwd };
+  }
+
   throw new Error(
     [
       'venice-video-harness binary not found. Set one of:',
-      '  - HARNESS_BIN=/path/to/dist/mini-drama/cli.js',
-      '  - HARNESS_PATH=/path/to/venice-video-harness   (with a built dist/)',
+      '  - HARNESS_BIN=/path/to/dist/mini-drama/cli.js   (most explicit)',
+      '  - HARNESS_PATH=/path/to/venice-video-harness    (with a built dist/)',
       '  - Run `npm link` inside the harness repo so `venice-video` is on PATH',
     ].join('\n'),
   );

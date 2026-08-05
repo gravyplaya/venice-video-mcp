@@ -14,6 +14,8 @@ function parseArgs(argv) {
   return {
     workspace: get('--workspace') ?? get('-w'),
     global: has('--global') || has('-g'),
+    target: get('--target'),
+    dir: get('--dir'),
     uninstall: has('--uninstall'),
     dryRun: has('--dry-run'),
     help: has('--help') || has('-h'),
@@ -23,23 +25,43 @@ function parseArgs(argv) {
 function help() {
   console.log(`Usage: venice-video-mcp install-skills [options]
 
-Symlinks the venice-video-mcp companion skills into a target .claude/skills/ directory.
+Symlinks the venice-video-mcp companion skills into a runner's skills directory.
+Claude Code / Cursor read .claude/skills/; other runners use their own path.
 
 Options:
-  -w, --workspace <dir>    Target workspace dir; symlinks land in <dir>/.claude/skills/
-  -g, --global             Target ~/.claude/skills/ (available in any project)
+  -w, --workspace <dir>    Claude/Cursor: symlinks land in <dir>/.claude/skills/
+  -g, --global             Claude/Cursor: target ~/.claude/skills/ (any project)
+      --target <runner>    Named runner. Supported: hermes (~/.hermes/skills/venice/).
+                           openclaw is not yet verified — use --dir with its path.
+      --dir <path>         Any runner: symlinks land directly in <path> (one dir
+                           per skill). Use this for a runner not named above.
       --uninstall          Remove the symlinks (does not delete the source skills)
       --dry-run            Print what would happen without doing it
   -h, --help               Show this help
 
-Either --workspace or --global is required. Pass both to install in two places.
+At least one target (--workspace, --global, --target, or --dir) is required.
 
 Examples:
   venice-video-mcp install-skills --workspace ./
   venice-video-mcp install-skills --global
-  venice-video-mcp install-skills --workspace ./ --global
-  venice-video-mcp install-skills --workspace ./ --uninstall
+  venice-video-mcp install-skills --target hermes
+  venice-video-mcp install-skills --dir ~/.config/some-runner/skills
+  venice-video-mcp install-skills --target hermes --uninstall
 `);
+}
+
+/** Map a named runner to the parent dir its skill folders live under. */
+function runnerSkillsDir(runner) {
+  switch (runner) {
+    case 'hermes':
+      // Hermes scans ~/.hermes/skills/ with one category dir per group and the
+      // skill folders nested inside; a `venice` category matches that layout.
+      return join(homedir(), '.hermes', 'skills', 'venice');
+    case 'openclaw':
+      return null; // not verified on any machine yet — force an explicit --dir
+    default:
+      return undefined; // unknown runner
+  }
 }
 
 async function ensureDir(dir, dryRun) {
@@ -119,9 +141,24 @@ async function main() {
     return;
   }
 
-  if (!args.workspace && !args.global) {
+  if (!args.workspace && !args.global && !args.target && !args.dir) {
     help();
     process.exit(1);
+  }
+
+  if (args.target) {
+    const resolved = runnerSkillsDir(args.target);
+    if (resolved === undefined) {
+      console.error(`Unknown --target "${args.target}". Supported: hermes. For others, pass --dir <path>.`);
+      process.exit(1);
+    }
+    if (resolved === null) {
+      console.error(
+        `--target ${args.target} has no verified skills path yet. Find where ${args.target} reads skills ` +
+          `and pass it explicitly: install-skills --dir <path>.`,
+      );
+      process.exit(1);
+    }
   }
 
   const here = dirname(fileURLToPath(import.meta.url));
@@ -150,6 +187,12 @@ async function main() {
   }
   if (args.global) {
     targets.push(join(homedir(), '.claude', 'skills'));
+  }
+  if (args.target) {
+    targets.push(runnerSkillsDir(args.target));
+  }
+  if (args.dir) {
+    targets.push(isAbsolute(args.dir) ? args.dir : resolve(args.dir));
   }
 
   for (const target of targets) {
