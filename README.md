@@ -115,81 +115,106 @@ If Seedance OS is *not* installed, `venice-mcp-directing` still applies its self
 
 ## Installation
 
-### 1. Install and build the harness
+Both this server and the harness are on npm, so the normal path is two global
+installs — no clone, no `npm link`, no hand-written paths. Cloning is only for
+developing the server itself (see [From source](#from-source-development)).
 
-The MCP shells out to the harness, so you need it built and available.
+### Install from npm (recommended)
 
 ```bash
+# The harness carries model support + consistency rules; the MCP wraps it in 7 tools.
+npm install -g venice-video-harness venice-video-mcp
+
+venice-video --help            # confirm the harness is on PATH
+```
+
+With both installed globally, the server finds `venice-video` on your `PATH`
+automatically — you do **not** set `HARNESS_BIN` or `HARNESS_PATH`. The only
+required env is `VENICE_API_KEY`; set `HARNESS_WORKSPACE` too if you want projects
+outside the cwd. Skip to [Configure your MCP client](#configure-your-mcp-client).
+
+Install the companion skills into your runner's skills directory (the bins are on
+`PATH` after the global install):
+
+```bash
+venice-video-mcp-install-skills --global         # Claude Code / Cursor: ~/.claude/skills/
+venice-video-mcp-install-skills --target hermes   # Hermes: ~/.hermes/skills/venice/
+venice-video-mcp-install-skills --dir <path>      # any other runner's skills dir
+```
+
+The installer creates symlinks into the target — running it again is idempotent.
+Use `--uninstall` to remove them (the source skills are untouched).
+
+### From source (development)
+
+Clone both repos only if you want to run the server (or the harness) ahead of its
+published release:
+
+```bash
+# Harness
 git clone https://github.com/jordanurbs/venice-video-harness.git
-cd venice-video-harness
-npm install
-npm run build
-npm link            # exposes `venice-video` on PATH
-```
+cd venice-video-harness && npm install && npm run build && npm link   # exposes `venice-video`
 
-Verify:
-```bash
-venice-video --help
-```
-
-### 2. Install and build the MCP server
-
-```bash
+# MCP server
 git clone https://github.com/jordanurbs/venice-video-mcp.git
-cd venice-video-mcp
-npm install
-npm run build
+cd venice-video-mcp && npm install && npm run build
+node bin/install-skills.js --global   # or --workspace ./ , or both
 ```
 
-### 3. Install the companion skills
+Point the server at your build with `HARNESS_BIN` (a specific
+`dist/mini-drama/cli.js`) or `HARNESS_PATH` (the clone root); see
+[Configuration](#configuration).
 
-Pick one (or both):
+### Configure your MCP client
+
+With a global install the command is just `venice-video-mcp`. Only
+`VENICE_API_KEY` is required; add `HARNESS_WORKSPACE` to control where projects
+land.
+
+#### Hermes Agent
 
 ```bash
-# Workspace-only (current project's .claude/skills/)
-node bin/install-skills.js --workspace ./
-
-# Global (~/.claude/skills/, available in any project)
-node bin/install-skills.js --global
-
-# Both
-node bin/install-skills.js --workspace ./ --global
+hermes mcp add venice-video --command venice-video-mcp
+hermes mcp test venice-video    # confirm the handshake
+# set VENICE_API_KEY (and HARNESS_WORKSPACE) in the server env per Hermes' config
 ```
 
-The installer creates symlinks into the target — running it again is idempotent. Use `--uninstall` to remove the symlinks (the source skills are untouched).
-
-### 4. Configure your MCP client
-
-#### Cursor (`.cursor/mcp.json`)
-
-See `examples/cursor.mcp.json`. Copy into your repo and adjust the absolute paths:
+#### Cursor (`.cursor/mcp.json`) / Claude Desktop / any JSON-config runner
 
 ```json
 {
   "mcpServers": {
     "venice-video": {
-      "command": "node",
-      "args": ["/ABS/PATH/TO/venice-video-mcp/bin/venice-video-mcp.js"],
+      "command": "venice-video-mcp",
       "env": {
         "VENICE_API_KEY": "vn_...",
-        "HARNESS_PATH": "/ABS/PATH/TO/venice-video-harness",
-        "HARNESS_WORKSPACE": "/ABS/PATH/TO/venice-video-harness"
+        "HARNESS_WORKSPACE": "/abs/path/to/your/venice-projects"
       }
     }
   }
 }
 ```
 
-#### Claude Desktop
-
-Same shape, written into `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or the equivalent on other OSes. See `examples/claude-desktop.config.json`.
+No global install? Run it on demand with `"command": "npx", "args": ["-y",
+"venice-video-mcp"]`. Claude Desktop uses the same shape in
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS).
+`examples/cursor.mcp.json` and `examples/claude-desktop.config.json` ship this
+recommended shape, with the npx and local-build variants noted in each file's
+`_comment`.
 
 #### Claude Code (CLI)
 
 ```bash
-claude mcp add venice-video -- node /ABS/PATH/TO/venice-video-mcp/bin/venice-video-mcp.js
-# then set env via shell or claude_code config
+claude mcp add venice-video -- venice-video-mcp
+# then set VENICE_API_KEY (and HARNESS_WORKSPACE) via shell or claude_code config
 ```
+
+#### Pointing at a local build instead
+
+For the [from-source](#from-source-development) path, set `command` to `node` with
+the clone's `bin/venice-video-mcp.js`, and add `HARNESS_BIN` or `HARNESS_PATH` to
+the env so the server uses your checkout rather than a published global (each
+example file's `_comment` shows this variant).
 
 ---
 
@@ -200,16 +225,22 @@ The MCP server reads these environment variables:
 | Variable | Required | Purpose |
 |---|---|---|
 | `VENICE_API_KEY` | yes | Venice API auth (forwarded to the harness) |
-| `HARNESS_PATH` | recommended | Absolute path to the harness repo (with built `dist/`) |
-| `HARNESS_BIN` | optional | Explicit path to a built harness CLI (`dist/mini-drama/cli.js`) |
-| `HARNESS_WORKSPACE` | optional | Where the MCP looks for series; defaults to cwd. Resolves project slugs against `<workspace>/output/<slug>/` |
+| `HARNESS_WORKSPACE` | recommended | Where the MCP looks for series; defaults to cwd. Resolves project slugs against `<workspace>/output/<slug>/` |
+| `HARNESS_BIN` | optional | Explicit path to a built harness CLI (`dist/mini-drama/cli.js`). Set only to pin a local build |
+| `HARNESS_PATH` | optional | Absolute path to a harness clone (with built `dist/`). Fallback for a local build |
 | `VENICE_MCP_UPDATE_CHECK` | optional | Set to `0` / `false` to disable the daily GitHub release check. See [Staying up to date](#staying-up-to-date). |
 | `GITHUB_TOKEN` | optional | If set, the update check uses authenticated GitHub API quota instead of the anonymous 60/hr bucket. Read-only `public_repo` scope is enough. |
 
-Resolution order for the harness binary:
+Resolution order for the harness binary (**fixed in 0.4.0** — `HARNESS_PATH` now
+outranks an ambient `PATH` binary, and the resolved binary is logged to stderr on
+the first tool call):
 1. `HARNESS_BIN` if set and exists.
-2. `venice-video` on PATH (i.e. you ran `npm link` in the harness).
-3. `HARNESS_PATH/dist/mini-drama/cli.js` if `HARNESS_PATH` is set.
+2. `HARNESS_PATH/dist/mini-drama/cli.js` if `HARNESS_PATH` is set.
+3. `venice-video` on PATH (a global `npm install -g venice-video-harness`, or `npm link` in a clone).
+
+With both packages installed globally you set none of these — resolution falls to
+step 3 and finds the global `venice-video`. Set `HARNESS_BIN`/`HARNESS_PATH` only
+to deliberately use a local checkout.
 
 ### Where your video projects land
 

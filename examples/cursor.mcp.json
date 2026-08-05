@@ -1,11 +1,10 @@
 {
+  "_comment": "Recommended: global install (npm i -g venice-video-harness venice-video-mcp), then command is just the bin on PATH. Only VENICE_API_KEY is required; HARNESS_WORKSPACE controls where projects land. No global install? Use command 'npx' with args ['-y','venice-video-mcp']. For a local build, use command 'node' with args ['/ABS/PATH/TO/venice-video-mcp/bin/venice-video-mcp.js'] and add HARNESS_BIN or HARNESS_PATH.",
   "mcpServers": {
     "venice-video": {
-      "command": "node",
-      "args": ["/ABS/PATH/TO/venice-video-mcp/bin/venice-video-mcp.js"],
+      "command": "venice-video-mcp",
       "env": {
         "VENICE_API_KEY": "vn_xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-        "HARNESS_PATH": "/ABS/PATH/TO/venice-video-harness",
         "HARNESS_WORKSPACE": "/ABS/PATH/TO/venice-projects",
         "VENICE_MCP_UPDATE_CHECK": "1"
       }
