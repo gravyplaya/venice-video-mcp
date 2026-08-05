@@ -14,6 +14,8 @@
     "dist",
     "skills",
     "examples",
+    "scripts/install-skills.js",
+    "scripts/update.js",
     "README.md",
     "LICENSE"
   ],
